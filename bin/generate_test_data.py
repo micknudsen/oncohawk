@@ -4,13 +4,22 @@ Generate a tiny, deterministic synthetic dataset for ONCOHAWK local testing.
 
 Creates:
   test/data/reference/chr22_subset.fa
-  test/data/reads/sample_A_lane1_R{1,2}.fastq.gz
-  test/data/reads/sample_A_lane2_R{1,2}.fastq.gz
-  test/data/reads/sample_B_lane1_R{1,2}.fastq.gz
+  test/data/reads/{sample}_{library}_L00{lane}_R{1,2}.fastq.gz
+
+Three samples ordered by increasing complexity:
+
+  sample_A — one library (lib_A) on a single lane
+             Simplest case: no lane/library merging required.
+  sample_B — one library (lib_B) across two lanes
+             Exercises lane merging within a single library.
+  sample_C — two libraries (lib_C1, lib_C2), each on one lane
+             Exercises per-library duplicate marking: duplicates must be
+             collapsed within a library but not across libraries.
+
 
 The reference is a single 50 kb contig of pseudo-random A/C/G/T (seed=42) so
 the output is reproducible across machines. Reads are 150 bp paired-end with
-~300 bp insert size, ~30x average depth, with a low (~1%) error rate.
+~300 bp insert size, ~30x average depth, with a low (~0.5%) error rate.
 
 No external dependencies — pure stdlib.
 """
@@ -99,18 +108,29 @@ def main() -> None:
     print(f"Wrote reference: {ref_path} ({REF_LENGTH} bp)")
 
     # ── Reads ───────────────────────────────────────────────────────────────
-    # ~30x coverage over 50 kb with 150bp reads -> ~5000 pairs total per sample
+    # ~30x coverage over 50 kb with 150bp reads -> ~5000 pairs total per sample.
+    # Each row: (sample, library, flowcell, lane, n_pairs, seed)
     samples = [
+        # sample_A — simplest: one library on a single lane
         ("sample_A", "lib_A", "FC1ABCXX", "1", 2500, 1001),
-        ("sample_A", "lib_A", "FC1ABCXX", "2", 2500, 1002),
+        # sample_B — one library across two lanes (lane merging)
         ("sample_B", "lib_B", "FC1ABCXX", "1", 2500, 2001),
+        ("sample_B", "lib_B", "FC1ABCXX", "2", 2500, 2002),
+        # sample_C — two libraries, each on one lane (same lane number,
+        # different libraries → exercises per-library duplicate marking)
+        ("sample_C", "lib_C1", "FC1ABCXX", "1", 2500, 3001),
+        ("sample_C", "lib_C2", "FC1ABCXX", "1", 2500, 3002),
     ]
+
     for sample, library, flowcell, lane, n_pairs, seed in samples:
-        prefix = f"{flowcell}:{lane}"
-        r1 = READ_DIR / f"{sample}_L00{lane}_R1.fastq.gz"
-        r2 = READ_DIR / f"{sample}_L00{lane}_R2.fastq.gz"
+        prefix = f"{flowcell}:{lane}:{library}"
+        r1 = READ_DIR / f"{sample}_{library}_L00{lane}_R1.fastq.gz"
+        r2 = READ_DIR / f"{sample}_{library}_L00{lane}_R2.fastq.gz"
         simulate_reads(reference, n_pairs, seed, r1, r2, prefix)
-        print(f"Wrote {n_pairs} read pairs for {sample} lane {lane}: {r1.name}, {r2.name}")
+        print(
+            f"Wrote {n_pairs} read pairs for {sample}/{library} lane {lane}: "
+            f"{r1.name}, {r2.name}"
+        )
 
 
 if __name__ == "__main__":
