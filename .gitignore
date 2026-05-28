@@ -1,0 +1,25 @@
+# Nextflow runtime artifacts
+work/
+.nextflow/
+.nextflow.log*
+.nextflow.history
+*.nf.html
+report-*.html
+timeline-*.html
+trace-*.txt
+dag-*.html
+
+# Pipeline outputs
+results/
+references/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/settings.json

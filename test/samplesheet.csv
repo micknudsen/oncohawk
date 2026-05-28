@@ -1,0 +1,4 @@
+sample,library,instrument,flowcell,lane,fastq_1,fastq_2
+sample_A,lib_A,HWI-D00138,FC1ABCXX,1,data/reads/sample_A_L001_R1.fastq.gz,data/reads/sample_A_L001_R2.fastq.gz
+sample_A,lib_A,HWI-D00138,FC1ABCXX,2,data/reads/sample_A_L002_R1.fastq.gz,data/reads/sample_A_L002_R2.fastq.gz
+sample_B,lib_B,HWI-D00138,FC1ABCXX,1,data/reads/sample_B_L001_R1.fastq.gz,data/reads/sample_B_L001_R2.fastq.gz
