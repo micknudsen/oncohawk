@@ -76,6 +76,7 @@ def simulate_reads(
     out_r1: Path,
     out_r2: Path,
     read_name_prefix: str,
+    index: str,
 ) -> None:
     rng = random.Random(seed)
     ref_len = len(reference)
@@ -95,8 +96,8 @@ def simulate_reads(
             qual = QUAL_CHAR * READ_LENGTH
             name = f"{read_name_prefix}:{i + 1}"
 
-            fh1.write(f"@{name} 1:N:0:CGATGT\n{r1_seq}\n+\n{qual}\n")
-            fh2.write(f"@{name} 2:N:0:CGATGT\n{r2_seq}\n+\n{qual}\n")
+            fh1.write(f"@{name} 1:N:0:{index}\n{r1_seq}\n+\n{qual}\n")
+            fh2.write(f"@{name} 2:N:0:{index}\n{r2_seq}\n+\n{qual}\n")
 
 
 def main() -> None:
@@ -109,27 +110,32 @@ def main() -> None:
 
     # ── Reads ───────────────────────────────────────────────────────────────
     # ~30x coverage over 50 kb with 150bp reads -> ~5000 pairs total per sample.
-    # Each row: (sample, library, flowcell, lane, n_pairs, seed)
+    #
+    # Each row: (sample, library, flowcell, lane, index, n_pairs, seed)
+    #
+    # Indexes (sample barcodes) are TruSeq-style 6 bp sequences, one per
+    # library. They appear in the FASTQ header (`1:N:0:<INDEX>`) and the
+    # samplesheet, and end up in the @RG PU field as
+    # {flowcell}.{lane}.{index} per the GATK convention.
     samples = [
         # sample_A — simplest: one library on a single lane
-        ("sample_A", "lib_A", "FC1ABCXX", "1", 2500, 1001),
+        ("sample_A", "lib_A", "FC1ABCXX", "1", "ATCACG", 2500, 1001),
         # sample_B — one library across two lanes (lane merging)
-        ("sample_B", "lib_B", "FC1ABCXX", "1", 2500, 2001),
-        ("sample_B", "lib_B", "FC1ABCXX", "2", 2500, 2002),
-        # sample_C — two libraries, each on one lane (same lane number,
-        # different libraries → exercises per-library duplicate marking)
-        ("sample_C", "lib_C1", "FC1ABCXX", "1", 2500, 3001),
-        ("sample_C", "lib_C2", "FC1ABCXX", "1", 2500, 3002),
+        ("sample_B", "lib_B", "FC1ABCXX", "1", "CGATGT", 2500, 2001),
+        ("sample_B", "lib_B", "FC1ABCXX", "2", "CGATGT", 2500, 2002),
+        # sample_C — two libraries on lane 2 (per-library duplicate marking)
+        ("sample_C", "lib_C1", "FC1ABCXX", "2", "TTAGGC", 2500, 3001),
+        ("sample_C", "lib_C2", "FC1ABCXX", "2", "TGACCA", 2500, 3002),
     ]
 
-    for sample, library, flowcell, lane, n_pairs, seed in samples:
+    for sample, library, flowcell, lane, index, n_pairs, seed in samples:
         prefix = f"{flowcell}:{lane}:{library}"
         r1 = READ_DIR / f"{sample}_{library}_L00{lane}_R1.fastq.gz"
         r2 = READ_DIR / f"{sample}_{library}_L00{lane}_R2.fastq.gz"
-        simulate_reads(reference, n_pairs, seed, r1, r2, prefix)
+        simulate_reads(reference, n_pairs, seed, r1, r2, prefix, index)
         print(
-            f"Wrote {n_pairs} read pairs for {sample}/{library} lane {lane}: "
-            f"{r1.name}, {r2.name}"
+            f"Wrote {n_pairs} read pairs for {sample}/{library} lane {lane} "
+            f"(index {index}): {r1.name}, {r2.name}"
         )
 
 
