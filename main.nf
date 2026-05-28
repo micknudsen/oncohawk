@@ -28,13 +28,13 @@ def helpMessage() {
 
     Workflows (--workflow):
         oncohawk             Main analysis workflow (default)
-        prepare_references   Download and index the GRCh38 reference genome
+        prepare_reference   Download and index the GRCh38 reference genome
 
     Required arguments (for --workflow oncohawk):
         --input              Path to samplesheet CSV
                              Columns: sample,library,instrument,flowcell,lane,fastq_1,fastq_2
         --genome_fasta       Path to indexed reference FASTA
-                             (or run --workflow prepare_references first)
+                             (or run --workflow prepare_reference first)
 
     Optional arguments:
         --outdir             Output directory (default: 'results')
@@ -53,7 +53,7 @@ def helpMessage() {
         nextflow run main.nf -profile test,docker
 
         # Prepare GRCh38 references (download + index)
-        nextflow run main.nf --workflow prepare_references -profile hpc,singularity
+        nextflow run main.nf --workflow prepare_reference -profile hpc,singularity
 
         # Run the main workflow with a custom samplesheet
         nextflow run main.nf -profile hpc,singularity \\
@@ -69,7 +69,7 @@ def helpMessage() {
 */
 
 include { ONCOHAWK            } from './workflows/oncohawk'
-include { PREPARE_REFERENCES  } from './workflows/prepare_references'
+include { PREPARE_REFERENCE  } from './workflows/prepare_reference'
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -92,12 +92,12 @@ workflow {
     if (params.workflow == 'oncohawk') {
         ONCOHAWK()
     }
-    else if (params.workflow == 'prepare_references') {
-        PREPARE_REFERENCES()
+    else if (params.workflow == 'prepare_reference') {
+        PREPARE_REFERENCE()
     }
     else {
         error "Unknown workflow: '${params.workflow}'. " +
-              "Valid options are: 'oncohawk', 'prepare_references'. " +
+              "Valid options are: 'oncohawk', 'prepare_reference'. " +
               "See `nextflow run main.nf --help` for usage."
     }
 
