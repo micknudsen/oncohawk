@@ -6,6 +6,8 @@
 
 nextflow.enable.dsl = 2
 
+include { CUTADAPT } from '../modules/local/cutadapt/main'
+
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     WORKFLOW
@@ -40,18 +42,18 @@ workflow ONCOHAWK {
         .splitCsv(header: true, strip: true)
         .map { row -> Samplesheet.parse(row, samplesheet_dir) }
 
-    // ── Log parsed samples (debug visibility) ────────────────────────────────
-    ch_reads.view { meta, r1, r2 ->
-        "  Parsed: ${meta.id}  | sample=${meta.sample} library=${meta.library} " +
-        "lane=${meta.lane} flowcell=${meta.flowcell}\n" +
-        "          R1=${r1.name}\n" +
-        "          R2=${r2.name}\n" +
-        "          RG=${meta.read_group}"
-    }
+    ch_versions = Channel.empty()
+
+    // ── Adapter trimming ─────────────────────────────────────────────────────
+    CUTADAPT(ch_reads)
+    ch_versions = ch_versions.mix(CUTADAPT.out.versions)
 
     // ── Placeholder: downstream subworkflows added in subsequent phases ──────
-    // PREPARE_INPUTS(ch_reads)
-    // READ_ALIGNMENT(PREPARE_INPUTS.out.reads, ch_reference)
+    // READ_ALIGNMENT(CUTADAPT.out.reads, ch_reference)
     // MARK_DUPLICATES(READ_ALIGNMENT.out.bam)
 
+    emit:
+    reads_trimmed = CUTADAPT.out.reads
+    versions      = ch_versions
 }
+
