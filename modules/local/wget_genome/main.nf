@@ -12,9 +12,8 @@ process WGET_GENOME {
 
     label 'process_low'
 
-    // We reuse the bwa-mem2 BioContainer here because it already ships wget +
-    // gzip, saving us from pulling a second image just to fetch a file.
-    container 'quay.io/biocontainers/bwa-mem2:2.2.1--he70b90d_8'
+    // Minimal container: just GNU wget + BusyBox gzip.
+    container 'quay.io/biocontainers/wget:1.25.0'
 
     input:
     val url
@@ -33,13 +32,12 @@ process WGET_GENOME {
     wget --no-verbose --tries=3 -O '${gz_name}' '${url}'
 
     if [[ '${gz_name}' == *.gz ]]; then
-        gunzip --force '${gz_name}'
+        gzip -df '${gz_name}'
     fi
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
         wget: \$(wget --version | head -n1 | awk '{print \$3}')
-        gzip: \$(gzip --version | head -n1 | awk '{print \$NF}')
     END_VERSIONS
     """
 }
