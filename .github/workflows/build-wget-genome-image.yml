@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - docker-test
     paths:
       - containers/wget-genome/**
       - .github/workflows/build-wget-genome-image.yml
