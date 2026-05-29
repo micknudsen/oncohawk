@@ -12,8 +12,8 @@ process WGET_GENOME {
 
     label 'process_low'
 
-    // Minimal container: just GNU wget + BusyBox gzip.
-    container 'quay.io/biocontainers/wget:1.25.0'
+    // Configure in nextflow.config: params.wget_genome_container
+    container "${params.wget_genome_container}"
 
     input:
     val url

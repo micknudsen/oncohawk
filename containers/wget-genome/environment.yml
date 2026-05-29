@@ -1,0 +1,10 @@
+name: wget-genome
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - bash=5.2
+  - ca-certificates
+  - wget=1.25
+  - gzip=1.14
