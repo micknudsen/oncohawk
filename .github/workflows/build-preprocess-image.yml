@@ -6,8 +6,8 @@ on:
     branches:
       - staging
     paths:
-      - containers/preprocess/**
-      - .github/workflows/build-preprocess-image.yml
+      - containers/preprocess/Dockerfile
+      - containers/preprocess/environment.yml
 
 permissions:
   contents: read

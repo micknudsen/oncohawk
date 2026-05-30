@@ -6,8 +6,8 @@ on:
     branches:
       - staging
     paths:
-      - containers/wget/**
-      - .github/workflows/build-wget-image.yml
+      - containers/wget/Dockerfile
+      - containers/wget/environment.yml
 
 permissions:
   contents: read
