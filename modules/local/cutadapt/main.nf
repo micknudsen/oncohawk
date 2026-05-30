@@ -16,7 +16,7 @@ process CUTADAPT {
 
     label 'process_medium'
 
-    container 'quay.io/biocontainers/cutadapt:5.2--py311h26ae33e_1'
+    container "${params.preprocess_container}"
 
     input:
     tuple val(meta), path(reads_1), path(reads_2)

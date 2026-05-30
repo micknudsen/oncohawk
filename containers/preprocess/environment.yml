@@ -1,0 +1,10 @@
+name: preprocess
+channels:
+  - bioconda
+  - conda-forge
+  - defaults
+dependencies:
+  - bash=5.2
+  - cutadapt=5.2
+  - bwa-mem2=2.3
+  - samtools=1.23.1

@@ -22,7 +22,7 @@ process BWAMEM2_MEM {
 
     label 'process_high'
 
-    container 'community.wave.seqera.io/library/bwa-mem2_htslib_samtools:db98f81f55b64113'
+    container "${params.preprocess_container}"
 
     input:
     tuple val(meta), path(reads_1), path(reads_2)

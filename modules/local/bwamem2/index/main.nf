@@ -15,7 +15,7 @@ process BWAMEM2_INDEX {
 
     label 'process_high_memory'
 
-    container 'quay.io/biocontainers/bwa-mem2:2.2.1--he70b90d_8'
+    container "${params.preprocess_container}"
 
     input:
     path fasta
