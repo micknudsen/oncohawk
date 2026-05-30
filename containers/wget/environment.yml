@@ -1,4 +1,4 @@
-name: wget-genome
+name: wget
 channels:
   - conda-forge
   - bioconda

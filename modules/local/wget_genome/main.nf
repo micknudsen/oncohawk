@@ -12,8 +12,8 @@ process WGET_GENOME {
 
     label 'process_low'
 
-    // Configure in nextflow.config: params.wget_genome_container
-    container "${params.wget_genome_container}"
+    // Configure in nextflow.config: params.wget_container
+    container "${params.wget_container}"
 
     input:
     val url
