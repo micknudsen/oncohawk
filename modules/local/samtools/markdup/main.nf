@@ -27,6 +27,7 @@ process MARKDUP_LIBRARY {
     script:
     // Reserve one thread for compression/indexing helpers.
     def tool_threads = Math.max(1, (task.cpus as int) - 1)
+    def markdup_optical_distance = params.markdup_optical_distance
     def bam_list = bams.collect { bam -> "'${bam}'" }.join(' ')
     """
     set -euo pipefail
@@ -38,6 +39,8 @@ process MARKDUP_LIBRARY {
         ${bam_list} \
     | samtools markdup \
         -@ ${tool_threads} \
+        -S \
+        -d ${markdup_optical_distance} \
         -s \
         - \
         ${meta.id}.bam
