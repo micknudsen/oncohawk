@@ -84,7 +84,7 @@ workflow ONCOHAWK {
     MARKDUP_LIBRARY(ch_bams_by_library)
     ch_versions = ch_versions.mix(MARKDUP_LIBRARY.out.versions)
 
-    // ── Merge deduplicated libraries only for multi-library samples ───────
+    // ── Merge deduplicated libraries to one BAM per sample ─────────────────
     ch_bams_by_sample = MARKDUP_LIBRARY.out.bam
         .map { meta, bam ->
             def sample_meta = [
@@ -95,20 +95,11 @@ workflow ONCOHAWK {
         }
         .groupTuple()
 
-    ch_single_library_samples = ch_bams_by_sample
-        .filter { _meta, bams -> bams.size() == 1 }
-        .map { meta, bams -> tuple(meta, bams[0]) }
-
-    ch_multi_library_samples = ch_bams_by_sample
-        .filter { _meta, bams -> bams.size() > 1 }
-
-    MERGE_SAMPLE_LIBRARIES(ch_multi_library_samples)
+    MERGE_SAMPLE_LIBRARIES(ch_bams_by_sample)
     ch_versions = ch_versions.mix(MERGE_SAMPLE_LIBRARIES.out.versions)
 
-    ch_final_bam = ch_single_library_samples.mix(MERGE_SAMPLE_LIBRARIES.out.bam)
-
     emit:
-    bam      = ch_final_bam
+    bam      = MERGE_SAMPLE_LIBRARIES.out.bam
     markdup  = MARKDUP_LIBRARY.out.bam
     versions = ch_versions
 }
