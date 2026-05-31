@@ -22,6 +22,7 @@ process MARKDUP_LIBRARY {
 
     output:
     tuple val(meta), path("${meta.id}.bam"), emit: bam
+    path "${meta.id}.markdup.json",       emit: stats
     path 'versions.yml',                    emit: versions
 
     script:
@@ -41,7 +42,8 @@ process MARKDUP_LIBRARY {
         -@ ${tool_threads} \
         -S \
         -d ${markdup_optical_distance} \
-        -s \
+        --json \
+        -f ${meta.id}.markdup.json \
         - \
         ${meta.id}.bam
 
