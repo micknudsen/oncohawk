@@ -33,17 +33,14 @@ process MARKDUP_LIBRARY {
 
     samtools merge \
         -@ ${tool_threads} \
-        -O BAM \
-        -o ${meta.id}.merged.bam \
-        ${bam_list}
-
-    samtools markdup \
+        -u \
+        - \
+        ${bam_list} \
+    | samtools markdup \
         -@ ${tool_threads} \
         -s \
-        ${meta.id}.merged.bam \
+        - \
         ${meta.id}.bam
-
-    rm -f ${meta.id}.merged.bam
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
