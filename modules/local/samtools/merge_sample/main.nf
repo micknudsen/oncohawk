@@ -19,6 +19,7 @@ process MERGE_SAMPLE_LIBRARIES {
 
     output:
     tuple val(meta), path("${meta.id}.bam"), emit: bam
+    tuple val(meta), path("${meta.id}.bam.bai"), emit: bai
     path 'versions.yml',                    emit: versions
 
     script:
