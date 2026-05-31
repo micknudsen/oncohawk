@@ -3,8 +3,10 @@
     BWAMEM2_MEM
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Aligns a pair of trimmed FASTQ files to a bwa-mem2 index and streams
-    the output through `samtools sort` to produce a coordinate-sorted
-    lane-level BAM. The `@RG` line is injected from `meta.read_group`.
+    the output through `samtools collate`, `samtools fixmate`, and
+    `samtools sort` to produce a coordinate-sorted lane-level BAM ready
+    for downstream duplicate marking. The `@RG` line is injected from
+    `meta.read_group`.
 
     The index is passed as a directory (`params.ref_data_genome_bwamem2_index`).
     The FASTA file is passed separately so bwa-mem2 can use it as the index
@@ -43,6 +45,8 @@ process BWAMEM2_MEM {
         -R '${meta.read_group}' \\
         ${index_dir}/${fasta.name} \\
         ${reads_1} ${reads_2} \\
+    | samtools collate -Ou - \\
+    | samtools fixmate -m - - \\
     | samtools sort \\
         -@ ${sort_threads} \\
         -o ${meta.id}.bam \\
