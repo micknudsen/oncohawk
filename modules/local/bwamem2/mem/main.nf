@@ -43,6 +43,8 @@ process BWAMEM2_MEM {
     bwa-mem2 mem \\
         -t ${task.cpus} \\
         -R '${meta.read_group}' \\
+        -K 100000000 \\
+        -Y \\
         ${index_dir}/${fasta.name} \\
         ${reads_1} ${reads_2} \\
     | samtools collate -Ou - \\
