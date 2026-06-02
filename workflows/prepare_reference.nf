@@ -30,7 +30,7 @@ workflow PREPARE_REFERENCE {
     log.info """\
 
         ╔══════════════════════════════════════════════════════╗
-        ║          ONCOHAWK — PREPARE_REFERENCE               ║
+        ║          ONCOHAWK — PREPARE_REFERENCE                ║
         ╚══════════════════════════════════════════════════════╝
         Reference directory : ${params.reference_dir}
         Genome FASTA        : ${params.genome_fasta ?: '(will download)'}
