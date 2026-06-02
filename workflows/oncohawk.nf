@@ -8,8 +8,8 @@ nextflow.enable.dsl = 2
 
 include { CUTADAPT    } from '../modules/local/cutadapt/main'
 include { BWAMEM2_MEM } from '../modules/local/bwamem2/mem/main'
-include { MARKDUP_LIBRARY } from '../modules/local/samtools/markdup/main'
-include { MERGE_SAMPLE_LIBRARIES } from '../modules/local/samtools/merge_sample/main'
+include { SAMTOOLS_MERGE } from '../modules/local/samtools/merge/main'
+include { SAMBAMBA_MARKUP } from '../modules/local/samtools/markdup/main'
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -69,23 +69,8 @@ workflow ONCOHAWK {
     BWAMEM2_MEM(CUTADAPT.out.reads, ch_reference)
     ch_versions = ch_versions.mix(BWAMEM2_MEM.out.versions)
 
-    // ── Duplicate marking per library (merge lanes within each library first)
-    ch_bams_by_library = BWAMEM2_MEM.out.bam
-        .map { meta, bam ->
-            def library_meta = [
-                id     : "${meta.sample}.${meta.library}",
-                sample : meta.sample,
-                library: meta.library,
-            ]
-            tuple(library_meta, bam)
-        }
-        .groupTuple()
-
-    MARKDUP_LIBRARY(ch_bams_by_library)
-    ch_versions = ch_versions.mix(MARKDUP_LIBRARY.out.versions)
-
-    // ── Merge deduplicated libraries to one BAM per sample ─────────────────
-    ch_bams_by_sample = MARKDUP_LIBRARY.out.bam
+    // ── Merge lane-level BAMs to one BAM per sample ───────────────────────
+    ch_bams_by_sample = BWAMEM2_MEM.out.bam
         .map { meta, bam ->
             def sample_meta = [
                 id    : meta.sample,
@@ -95,11 +80,16 @@ workflow ONCOHAWK {
         }
         .groupTuple()
 
-    MERGE_SAMPLE_LIBRARIES(ch_bams_by_sample)
-    ch_versions = ch_versions.mix(MERGE_SAMPLE_LIBRARIES.out.versions)
+    SAMTOOLS_MERGE(ch_bams_by_sample)
+    ch_versions = ch_versions.mix(SAMTOOLS_MERGE.out.versions)
+
+    // ── Duplicate marking with sambamba ────────────────────────────────────
+    SAMBAMBA_MARKUP(SAMTOOLS_MERGE.out.bam)
+    ch_versions = ch_versions.mix(SAMBAMBA_MARKUP.out.versions)
 
     emit:
-    bam      = MERGE_SAMPLE_LIBRARIES.out.bam
-    markdup  = MARKDUP_LIBRARY.out.bam
+    bam      = SAMBAMBA_MARKUP.out.bam
+    bai      = SAMBAMBA_MARKUP.out.bai
+    markdup  = SAMBAMBA_MARKUP.out.bam
     versions = ch_versions
 }

@@ -1,15 +1,13 @@
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    MARKDUP_LIBRARY
+    SAMBAMBA_MARKUP
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    Groups lane-level BAMs by (sample, library), merges lane BAMs within each
-    library, and performs duplicate marking with samtools markdup.
-
-    Duplicate marking is intentionally done per library (LB), not per sample.
+    Performs duplicate marking with sambamba markdup on one merged BAM
+    per sample.
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
-process MARKDUP_LIBRARY {
+process SAMBAMBA_MARKUP {
 
     tag { meta.id }
 
@@ -18,37 +16,37 @@ process MARKDUP_LIBRARY {
     container "${params.preprocess_container}"
 
     input:
-    tuple val(meta), path(bams)
+    tuple val(meta), path(bam)
 
     output:
     tuple val(meta), path("${meta.id}.bam"), emit: bam
-    path "${meta.id}.markdup.json",       emit: stats
+    tuple val(meta), path("${meta.id}.bam.bai"), emit: bai
+    path "${meta.id}.markdup.log",               emit: stats
     path 'versions.yml',                    emit: versions
 
     script:
     // Reserve one thread for compression/indexing helpers.
     def tool_threads = Math.max(1, (task.cpus as int) - 1)
-    def markdup_optical_distance = params.markdup_optical_distance
-    def bam_list = bams.collect { bam -> "'${bam}'" }.join(' ')
+    def tmp_bam = "${meta.id}.markedup.bam"
     """
     set -euo pipefail
 
-    samtools merge \
+    sambamba markdup \
+        -t ${tool_threads} \
+        --tmpdir . \
+        ${bam} \
+        ${tmp_bam} \
+        2> ${meta.id}.markdup.log
+
+    mv ${tmp_bam} ${meta.id}.bam
+
+    samtools index \
         -@ ${tool_threads} \
-        -u \
-        - \
-        ${bam_list} \
-    | samtools markdup \
-        -@ ${tool_threads} \
-        -S \
-        -d ${markdup_optical_distance} \
-        --json \
-        -f ${meta.id}.markdup.json \
-        - \
         ${meta.id}.bam
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
+        sambamba: \$(sambamba --version 2>&1 | head -n1 | awk '{print \$2}')
         samtools: \$(samtools --version | head -n1 | awk '{print \$2}')
     END_VERSIONS
     """

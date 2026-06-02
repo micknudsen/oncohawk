@@ -47,8 +47,6 @@ process BWAMEM2_MEM {
         -Y \\
         ${index_dir}/${fasta.name} \\
         ${reads_1} ${reads_2} \\
-    | samtools collate -Ou - \\
-    | samtools fixmate -m - - \\
     | samtools sort \\
         -@ ${sort_threads} \\
         -o ${meta.id}.bam \\

@@ -1,12 +1,12 @@
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    MERGE_SAMPLE_LIBRARIES
+    SAMTOOLS_MERGE
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    Merges deduplicated per-library BAMs into one final BAM per sample.
+    Merges lane-level BAMs into one BAM per sample.
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
-process MERGE_SAMPLE_LIBRARIES {
+process SAMTOOLS_MERGE {
 
     tag { meta.id }
 
@@ -19,7 +19,6 @@ process MERGE_SAMPLE_LIBRARIES {
 
     output:
     tuple val(meta), path("${meta.id}.bam"), emit: bam
-    tuple val(meta), path("${meta.id}.bam.bai"), emit: bai
     path 'versions.yml',                    emit: versions
 
     script:
@@ -34,10 +33,6 @@ process MERGE_SAMPLE_LIBRARIES {
         -O BAM \
         -o ${meta.id}.bam \
         ${bam_list}
-
-    samtools index \
-        -@ ${tool_threads} \
-        ${meta.id}.bam
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
