@@ -26,8 +26,18 @@ process WGET_GENOME {
     // Strip a single trailing .gz if present to get the final FASTA filename.
     def gz_name  = url.tokenize('/').last()
     out_name = gz_name.endsWith('.gz') ? gz_name[0..-4] : gz_name
+    // Forward proxy variables from Nextflow launcher env to this task only.
+    def proxy_exports = ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY', 'no_proxy', 'NO_PROXY']
+        .collect { key ->
+            def value = System.getenv(key)
+            value ? "export ${key}='${value.replace("'", "'\\''")}'" : null
+        }
+        .findAll { it }
+        .join('\n')
     """
     set -euo pipefail
+
+    ${proxy_exports}
 
     wget --no-verbose --tries=3 -O '${gz_name}' '${url}'
 
