@@ -2,12 +2,6 @@ name: Build and Publish PREPROCESS Image
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - staging
-    paths:
-      - containers/preprocess/Dockerfile
-      - containers/preprocess/environment.yml
 
 permissions:
   contents: read

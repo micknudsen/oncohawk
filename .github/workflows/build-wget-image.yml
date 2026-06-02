@@ -2,12 +2,6 @@ name: Build and Publish WGET Image
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - staging
-    paths:
-      - containers/wget/Dockerfile
-      - containers/wget/environment.yml
 
 permissions:
   contents: read
