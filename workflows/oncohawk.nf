@@ -9,7 +9,7 @@ nextflow.enable.dsl = 2
 include { CUTADAPT    } from '../modules/local/cutadapt/main'
 include { BWAMEM2_MEM } from '../modules/local/bwamem2/mem/main'
 include { SAMTOOLS_MERGE } from '../modules/local/samtools/merge/main'
-include { SAMBAMBA_MARKUP } from '../modules/local/samtools/markdup/main'
+include { SAMBAMBA_MARKDUP } from '../modules/local/sambamba/markdup/main'
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -84,12 +84,12 @@ workflow ONCOHAWK {
     ch_versions = ch_versions.mix(SAMTOOLS_MERGE.out.versions)
 
     // ── Duplicate marking with sambamba ────────────────────────────────────
-    SAMBAMBA_MARKUP(SAMTOOLS_MERGE.out.bam)
-    ch_versions = ch_versions.mix(SAMBAMBA_MARKUP.out.versions)
+    SAMBAMBA_MARKDUP(SAMTOOLS_MERGE.out.bam)
+    ch_versions = ch_versions.mix(SAMBAMBA_MARKDUP.out.versions)
 
     emit:
-    bam      = SAMBAMBA_MARKUP.out.bam
-    bai      = SAMBAMBA_MARKUP.out.bai
-    markdup  = SAMBAMBA_MARKUP.out.bam
+    bam      = SAMBAMBA_MARKDUP.out.bam
+    bai      = SAMBAMBA_MARKDUP.out.bai
+    markdup  = SAMBAMBA_MARKDUP.out.bam
     versions = ch_versions
 }
