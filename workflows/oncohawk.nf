@@ -61,15 +61,15 @@ workflow ONCOHAWK {
 
     ch_versions = Channel.empty()
 
-    // ── Adapter trimming ─────────────────────────────────────────────────────
+    // ── Adapter trimming ───────────────────────────────────────────────────
     CUTADAPT(ch_reads)
     ch_versions = ch_versions.mix(CUTADAPT.out.versions)
 
-    // ── Alignment (bwa-mem2 mem | collate | fixmate | sort) ─────────────────
+    // ── Alignment (bwa-mem2 mem | samtools sort) ───────────────────────────
     BWAMEM2_MEM(CUTADAPT.out.reads, ch_reference)
     ch_versions = ch_versions.mix(BWAMEM2_MEM.out.versions)
 
-    // ── Merge lane-level BAMs to one BAM per sample ───────────────────────
+    // ── Merge lane-level BAMs to one BAM per sample ────────────────────────
     ch_bams_by_sample = BWAMEM2_MEM.out.bam
         .map { meta, bam ->
             def sample_meta = [
