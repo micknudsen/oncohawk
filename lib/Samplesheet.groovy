@@ -5,7 +5,7 @@
  *
  *  Expected CSV columns (header row required):
  *
- *      sample, library, instrument, flowcell, lane, index, fastq_1, fastq_2
+ *      sample, library, flowcell, lane, fastq_1, fastq_2
  *
  *  One row per (sample, library, lane) — a sample sequenced across multiple
  *  lanes will appear on multiple rows and be merged downstream.
@@ -18,10 +18,8 @@
  *
  *      sample        — sample name (SM)
  *      library       — library name (LB)
- *      instrument    — instrument id (documentation only)
  *      flowcell      — flowcell id  (used in @RG ID and PU)
  *      lane          — lane number  (used in @RG ID and PU)
- *      index         — sample barcode / index sequence (used in PU)
  *      id            — unique per-row id: "${sample}.${library}.${flowcell}.${lane}"
  *      read_group    — pre-formatted @RG string ready for `bwa-mem2 mem -R`
 
@@ -39,10 +37,8 @@ class Samplesheet {
     static final List<String> REQUIRED_COLUMNS = [
         'sample',
         'library',
-        'instrument',
         'flowcell',
         'lane',
-        'index',
         'fastq_1',
         'fastq_2',
     ]
@@ -75,10 +71,8 @@ class Samplesheet {
 
         def sample     = row.sample.toString().trim()
         def library    = row.library.toString().trim()
-        def instrument = row.instrument.toString().trim()
         def flowcell   = row.flowcell.toString().trim()
         def lane       = row.lane.toString().trim()
-        def index      = row.index.toString().trim()
         def fastq_1    = row.fastq_1.toString().trim()
         def fastq_2    = row.fastq_2.toString().trim()
 
@@ -86,36 +80,20 @@ class Samplesheet {
         if (!(lane ==~ /\d+/)) {
             Nextflow.error("Samplesheet 'lane' must be an integer, got '${lane}' for sample '${sample}'")
         }
-        // Accept a single index (e.g. ATCACG) or dual index (e.g. ATCACG-CGTGAT).
-        if (!(index ==~ /[ACGTN]+(-[ACGTN]+)?/)) {
-            Nextflow.error("Samplesheet 'index' must match [ACGTN]+(-[ACGTN]+)?, " +
-                           "got '${index}' for sample '${sample}'")
-        }
-
         // ── Build a unique row id and a canonical @RG string ────────────────
-        //
-        // PU (Platform Unit) per the SAM spec is the physical multiplexed-pool
-        // identifier. GATK's canonical form is:
-        //     {flowcell}.{lane}.{sample_barcode}
-        // i.e. one PU per (flowcell, lane, index) triple. This is the
-        // grouping GATK BQSR uses to model per-run base-calling error
-        // characteristics.
         def id = "${sample}.${library}.${flowcell}.${lane}".toString()
         def rg_id = "${flowcell}.${lane}".toString()
-        def rg_pu = "${flowcell}.${lane}.${index}".toString()
+        def rg_pu = "${flowcell}.${lane}.${library}".toString()
         def read_group = "@RG\\tID:${rg_id}\\tSM:${sample}\\tLB:${library}\\tPL:ILLUMINA\\tPU:${rg_pu}".toString()
 
         def meta = [
             id         : id,
             sample     : sample,
             library    : library,
-            instrument : instrument,
             flowcell   : flowcell,
             lane       : lane,
-            index      : index,
             read_group : read_group,
         ]
-
 
         // ── Resolve FASTQ paths (relative paths resolved against samplesheet dir) ──
         def r1 = resolvePath(fastq_1, samplesheet_dir)

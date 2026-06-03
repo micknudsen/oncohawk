@@ -32,7 +32,7 @@ def helpMessage() {
 
     Required arguments (for --workflow oncohawk):
         --input              Path to samplesheet CSV
-                             Columns: sample,library,instrument,flowcell,lane,fastq_1,fastq_2
+                             Columns: sample,library,flowcell,lane,fastq_1,fastq_2
         --genome_fasta       Path to indexed reference FASTA
                              (or run --workflow prepare_reference first)
 
