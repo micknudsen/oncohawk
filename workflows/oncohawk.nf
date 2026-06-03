@@ -6,8 +6,7 @@
 
 nextflow.enable.dsl = 2
 
-include { CUTADAPT    } from '../modules/local/cutadapt/main'
-include { BWAMEM2_MEM } from '../modules/local/bwamem2/mem/main'
+include { CUTADAPT_BWAMEM2_MEM } from '../modules/local/bwamem2/mem/main'
 include { SAMTOOLS_MERGE } from '../modules/local/samtools/merge/main'
 include { SAMBAMBA_MARKDUP } from '../modules/local/sambamba/markdup/main'
 
@@ -61,16 +60,12 @@ workflow ONCOHAWK {
 
     ch_versions = Channel.empty()
 
-    // ── Adapter trimming ───────────────────────────────────────────────────
-    CUTADAPT(ch_reads)
-    ch_versions = ch_versions.mix(CUTADAPT.out.versions)
-
-    // ── Alignment (bwa-mem2 mem | samtools sort) ───────────────────────────
-    BWAMEM2_MEM(CUTADAPT.out.reads, ch_reference)
-    ch_versions = ch_versions.mix(BWAMEM2_MEM.out.versions)
+    // ── Adapter trimming + alignment (streamed) ───────────────────────────
+    CUTADAPT_BWAMEM2_MEM(ch_reads, ch_reference)
+    ch_versions = ch_versions.mix(CUTADAPT_BWAMEM2_MEM.out.versions)
 
     // ── Merge lane-level BAMs to one BAM per sample ────────────────────────
-    ch_bams_by_sample = BWAMEM2_MEM.out.bam
+    ch_bams_by_sample = CUTADAPT_BWAMEM2_MEM.out.bam
         .map { meta, bam ->
             def sample_meta = [
                 id    : meta.sample,

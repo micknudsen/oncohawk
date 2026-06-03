@@ -1,12 +1,11 @@
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    BWAMEM2_MEM
+    CUTADAPT_BWAMEM2_MEM
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    Aligns a pair of trimmed FASTQ files to a bwa-mem2 index and streams
-    the output through `samtools collate`, `samtools fixmate`, and
-    `samtools sort` to produce a coordinate-sorted lane-level BAM ready
-    for downstream duplicate marking. The `@RG` line is injected from
-    `meta.read_group`.
+    Trims paired-end reads with cutadapt and streams interleaved FASTQ
+    directly into bwa-mem2, then sorts with samtools to produce a
+    coordinate-sorted lane-level BAM ready for downstream duplicate
+    marking. The `@RG` line is injected from `meta.read_group`.
 
     The index is passed as a directory (`params.ref_data_genome_bwamem2_index`).
     The FASTA file is passed separately so bwa-mem2 can use it as the index
@@ -18,7 +17,7 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
-process BWAMEM2_MEM {
+process CUTADAPT_BWAMEM2_MEM {
 
     tag { meta.id }
 
@@ -32,21 +31,34 @@ process BWAMEM2_MEM {
 
     output:
     tuple val(meta), path("${meta.id}.bam"), emit: bam
+    path "${meta.id}.cutadapt.log",         emit: log
     path 'versions.yml',                     emit: versions
 
     script:
+    def adapter_r1 = params.adapter_r1
+    def adapter_r2 = params.adapter_r2
     // Reserve one thread for samtools sort.
     def sort_threads = Math.max(1, (task.cpus as int) - 1)
     """
     set -euo pipefail
 
-    bwa-mem2 mem \\
+    cutadapt \\
+        -j 1 \\
+        -a ${adapter_r1} \\
+        -A ${adapter_r2} \\
+        --minimum-length 35 \\
+        --interleaved \\
+        -o - \\
+        ${reads_1} ${reads_2} \\
+        2> ${meta.id}.cutadapt.log \\
+    | bwa-mem2 mem \\
         -t ${task.cpus} \\
+        -p \\
         -R '${meta.read_group}' \\
         -K 100000000 \\
         -Y \\
         ${index_dir}/${fasta.name} \\
-        ${reads_1} ${reads_2} \\
+        - \\
     | samtools sort \\
         -@ ${sort_threads} \\
         -o ${meta.id}.bam \\
@@ -54,6 +66,7 @@ process BWAMEM2_MEM {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
+        cutadapt: \$(cutadapt --version)
         bwa-mem2: \$(bwa-mem2 version 2>&1 | grep -oE '[0-9]+\\.[0-9]+(\\.[0-9]+)?' | head -n1)
         samtools: \$(samtools --version | head -n1 | awk '{print \$2}')
     END_VERSIONS
