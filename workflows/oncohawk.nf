@@ -6,9 +6,9 @@
 
 nextflow.enable.dsl = 2
 
-include { CUTADAPT_BWAMEM2_MEM } from '../modules/local/bwamem2/mem/main'
-include { SAMTOOLS_MERGE } from '../modules/local/samtools/merge/main'
-include { SAMBAMBA_MARKDUP } from '../modules/local/sambamba/markdup/main'
+include { TRIM_AND_MAP_FASTQ } from '../modules/local/trim_and_map_fastq/main'
+include { MERGE_LANE_BAMS } from '../modules/local/merge_lane_bams/main'
+include { MARK_DUPLICATES } from '../modules/local/mark_duplicates/main'
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -61,11 +61,11 @@ workflow ONCOHAWK {
     ch_versions = Channel.empty()
 
     // ── Adapter trimming + alignment (streamed) ───────────────────────────
-    CUTADAPT_BWAMEM2_MEM(ch_reads, ch_reference)
-    ch_versions = ch_versions.mix(CUTADAPT_BWAMEM2_MEM.out.versions)
+    TRIM_AND_MAP_FASTQ(ch_reads, ch_reference)
+    ch_versions = ch_versions.mix(TRIM_AND_MAP_FASTQ.out.versions)
 
     // ── Merge lane-level BAMs to one BAM per sample ────────────────────────
-    ch_bams_by_sample = CUTADAPT_BWAMEM2_MEM.out.bam
+    ch_bams_by_sample = TRIM_AND_MAP_FASTQ.out.bam
         .map { meta, bam ->
             def sample_meta = [
                 id    : meta.sample,
@@ -75,16 +75,16 @@ workflow ONCOHAWK {
         }
         .groupTuple()
 
-    SAMTOOLS_MERGE(ch_bams_by_sample)
-    ch_versions = ch_versions.mix(SAMTOOLS_MERGE.out.versions)
+    MERGE_LANE_BAMS(ch_bams_by_sample)
+    ch_versions = ch_versions.mix(MERGE_LANE_BAMS.out.versions)
 
     // ── Duplicate marking with sambamba ────────────────────────────────────
-    SAMBAMBA_MARKDUP(SAMTOOLS_MERGE.out.bam)
-    ch_versions = ch_versions.mix(SAMBAMBA_MARKDUP.out.versions)
+    MARK_DUPLICATES(MERGE_LANE_BAMS.out.bam)
+    ch_versions = ch_versions.mix(MARK_DUPLICATES.out.versions)
 
     emit:
-    bam      = SAMBAMBA_MARKDUP.out.bam
-    bai      = SAMBAMBA_MARKDUP.out.bai
-    markdup  = SAMBAMBA_MARKDUP.out.bam
+    bam      = MARK_DUPLICATES.out.bam
+    bai      = MARK_DUPLICATES.out.bai
+    markdup  = MARK_DUPLICATES.out.bam
     versions = ch_versions
 }

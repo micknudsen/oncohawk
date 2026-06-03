@@ -20,8 +20,8 @@
 
 nextflow.enable.dsl = 2
 
-include { WGET_GENOME   } from '../modules/local/wget_genome/main'
-include { BWAMEM2_INDEX } from '../modules/local/bwamem2/index/main'
+include { DOWNLOAD_GENOME } from '../modules/local/download_genome/main'
+include { INDEX_GENOME } from '../modules/local/index_genome/main'
 
 workflow PREPARE_REFERENCE {
 
@@ -43,16 +43,16 @@ workflow PREPARE_REFERENCE {
     if (params.genome_fasta) {
         ch_fasta = Channel.fromPath(params.genome_fasta, checkIfExists: true)
     } else {
-        WGET_GENOME(Channel.value(params.genome_url))
-        ch_fasta    = WGET_GENOME.out.fasta
-        ch_versions = ch_versions.mix(WGET_GENOME.out.versions)
+        DOWNLOAD_GENOME(Channel.value(params.genome_url))
+        ch_fasta    = DOWNLOAD_GENOME.out.fasta
+        ch_versions = ch_versions.mix(DOWNLOAD_GENOME.out.versions)
     }
 
     // ── bwa-mem2 index ──────────────────────────────────────────────────────
-    BWAMEM2_INDEX(ch_fasta)
-    ch_versions = ch_versions.mix(BWAMEM2_INDEX.out.versions)
+    INDEX_GENOME(ch_fasta)
+    ch_versions = ch_versions.mix(INDEX_GENOME.out.versions)
 
     emit:
-    reference = BWAMEM2_INDEX.out.index
+    reference = INDEX_GENOME.out.index
     versions  = ch_versions
 }

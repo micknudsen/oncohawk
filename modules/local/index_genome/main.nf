@@ -1,6 +1,6 @@
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    BWAMEM2_INDEX
+    INDEX_GENOME
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Builds a bwa-mem2 index from a reference FASTA. Emits the original
     FASTA plus the five index files (.0123, .amb, .ann, .bwt.2bit.64, .pac)
@@ -11,7 +11,7 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
-process BWAMEM2_INDEX {
+process INDEX_GENOME {
 
     label 'process_high_memory'
 

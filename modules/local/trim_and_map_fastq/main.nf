@@ -1,6 +1,6 @@
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    CUTADAPT_BWAMEM2_MEM
+    TRIM_AND_MAP_FASTQ
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Trims paired-end reads with cutadapt and streams interleaved FASTQ
     directly into bwa-mem2, then sorts with samtools to produce a
@@ -17,7 +17,7 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
-process CUTADAPT_BWAMEM2_MEM {
+process TRIM_AND_MAP_FASTQ {
 
     tag { meta.id }
 
