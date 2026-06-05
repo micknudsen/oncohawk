@@ -1,6 +1,3 @@
-// Copied verbatim from https://github.com/nf-core/modules (nf-core/cutadapt)
-// Container: quay.io/biocontainers — biocontainers produced by bioconda
-
 process CUTADAPT {
     tag "$meta.id"
     label 'process_medium'
@@ -22,9 +19,9 @@ process CUTADAPT {
     task.ext.when == null || task.ext.when
 
     script:
-    def args    = task.ext.args   ?: ''
-    def prefix  = task.ext.prefix ?: "${meta.id}"
-    def trimmed = meta.single_end ? "-o ${prefix}.trim.fastq.gz" : "-o ${prefix}_1.trim.fastq.gz -p ${prefix}_2.trim.fastq.gz"
+    def args = task.ext.args ?: ''
+    def prefix = task.ext.prefix ?: "${meta.id}"
+    def trimmed  = meta.single_end ? "-o ${prefix}.trim.fastq.gz" : "-o ${prefix}_1.trim.fastq.gz -p ${prefix}_2.trim.fastq.gz"
     """
     cutadapt \\
         --cores $task.cpus \\
