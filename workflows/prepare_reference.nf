@@ -5,23 +5,23 @@
     Produces an indexed reference for downstream alignment. Modes:
 
       1. `params.genome_fasta` is set  → use that FASTA as-is, build only
-         the indexes that don't already exist alongside it.
+         the index if it doesn't already exist.
       2. otherwise                     → download from `params.genome_url`
          (default: GRCh38 no-alt analysis set), then index.
 
     Emits a single value channel `ch_reference` containing
-        tuple( fasta, bwa_0123, bwa_amb, bwa_ann, bwa_bwt_2bit_64, bwa_pac )
+        tuple( meta, path("bwamem2") )   — the bwa-mem2 index directory
 
-    Following YAGNI: only the bwa-mem2 index is built here. Other indexes
-    (faidx, dict, ...) will be added by later workflow phases as the tools
-    that need them are introduced.
+    The index is published to `params.reference_dir/bwamem2/`.
+    After running this workflow, set `params.ref_data_genome_bwamem2_index`
+    to `<reference_dir>/bwamem2` in your profile config.
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
 nextflow.enable.dsl = 2
 
 include { DOWNLOAD_GENOME } from '../modules/local/download_genome/main'
-include { INDEX_GENOME } from '../modules/local/index_genome/main'
+include { BWAMEM2_INDEX   } from '../modules/nf-core/bwamem2/index/main'
 
 workflow PREPARE_REFERENCE {
 
@@ -37,22 +37,22 @@ workflow PREPARE_REFERENCE {
         Genome URL          : ${params.genome_url}
         """.stripIndent()
 
-    ch_versions = Channel.empty()
-
     // ── Source FASTA: either user-provided or downloaded ────────────────────
     if (params.genome_fasta) {
-        ch_fasta = Channel.fromPath(params.genome_fasta, checkIfExists: true)
+        ch_fasta = Channel
+            .fromPath(params.genome_fasta, checkIfExists: true)
+            .map { fasta -> [[id: fasta.baseName], fasta] }
     } else {
         DOWNLOAD_GENOME(Channel.value(params.genome_url))
-        ch_fasta    = DOWNLOAD_GENOME.out.fasta
-        ch_versions = ch_versions.mix(DOWNLOAD_GENOME.out.versions)
+        ch_fasta = DOWNLOAD_GENOME.out.fasta
+            .map { fasta -> [[id: fasta.baseName], fasta] }
     }
 
     // ── bwa-mem2 index ──────────────────────────────────────────────────────
-    INDEX_GENOME(ch_fasta)
-    ch_versions = ch_versions.mix(INDEX_GENOME.out.versions)
+    // Output: tuple(meta, path("bwamem2")) — a directory named "bwamem2"
+    // containing all index files under the genome prefix.
+    BWAMEM2_INDEX(ch_fasta)
 
     emit:
-    reference = INDEX_GENOME.out.index
-    versions  = ch_versions
+    reference = BWAMEM2_INDEX.out.index
 }

@@ -93,6 +93,7 @@ class Samplesheet {
             flowcell   : flowcell,
             lane       : lane,
             read_group : read_group,
+            single_end : false,
         ]
 
         // ── Resolve FASTQ paths (relative paths resolved against samplesheet dir) ──

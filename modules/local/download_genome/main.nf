@@ -12,8 +12,7 @@ process DOWNLOAD_GENOME {
 
     label 'process_low'
 
-    // Configure in nextflow.config: params.wget_container
-    container "${params.wget_container}"
+    container 'quay.io/biocontainers/wget:1.25.0'
 
     input:
     val url
@@ -32,7 +31,7 @@ process DOWNLOAD_GENOME {
             def value = System.getenv(key)
             value ? "export ${key}='${value.replace("'", "'\\''")}'" : null
         }
-        .findAll { it }
+        .findAll { export_line -> export_line }
         .join('\n')
     """
     set -euo pipefail

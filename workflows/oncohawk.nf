@@ -6,9 +6,10 @@
 
 nextflow.enable.dsl = 2
 
-include { TRIM_AND_MAP_FASTQ } from '../modules/local/trim_and_map_fastq/main'
-include { MERGE_LANE_BAMS } from '../modules/local/merge_lane_bams/main'
-include { MARK_DUPLICATES } from '../modules/local/mark_duplicates/main'
+include { CUTADAPT              } from '../modules/nf-core/cutadapt/main'
+include { BWAMEM2_MEM           } from '../modules/nf-core/bwamem2/mem/main'
+include { SAMTOOLS_MERGE        } from '../modules/nf-core/samtools/merge/main'
+include { PICARD_MARKDUPLICATES } from '../modules/nf-core/picard/markduplicates/main'
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -43,48 +44,59 @@ workflow ONCOHAWK {
               "Run --workflow prepare_reference first, then set this param in your config."
     }
 
-    // ── Reference channel (value channel — reused by all alignment tasks) ────
-    ch_reference = Channel.value([
-        file(params.ref_data_genome_fasta,         checkIfExists: true),
+    // ── Reference channels (value channels — reused by all alignment tasks) ──
+    // ch_bwamem2_index: the bwamem2/ directory produced by BWAMEM2_INDEX
+    ch_bwamem2_index = Channel.value([
+        [id: 'genome'],
         file(params.ref_data_genome_bwamem2_index, checkIfExists: true),
     ])
+    // ch_fasta: only needed for CRAM output; unused here but required by BWAMEM2_MEM
+    ch_fasta = Channel.value([[id: 'genome'], []])
 
     // ── Parse samplesheet ────────────────────────────────────────────────────
     def samplesheet_file = file(params.input, checkIfExists: true)
     def samplesheet_dir  = samplesheet_file.parent
 
+    // Samplesheet.parse emits [meta, r1, r2]; reshape to [meta, [r1, r2]] for CUTADAPT
     ch_reads = Channel
         .fromPath(samplesheet_file)
         .splitCsv(header: true, strip: true)
         .map { row -> Samplesheet.parse(row, samplesheet_dir) }
+        .map { meta, r1, r2 -> [meta, [r1, r2]] }
 
-    ch_versions = Channel.empty()
+    // ── Step 1: Adapter trimming (one task per lane) ──────────────────────
+    CUTADAPT(ch_reads)
 
-    // ── Adapter trimming + alignment (streamed) ───────────────────────────
-    TRIM_AND_MAP_FASTQ(ch_reads, ch_reference)
-    ch_versions = ch_versions.mix(TRIM_AND_MAP_FASTQ.out.versions)
+    // ── Step 2: Alignment + coordinate sort (one task per lane) ──────────
+    // sort_bam = true  →  samtools sort is used inside the module
+    BWAMEM2_MEM(CUTADAPT.out.reads, ch_bwamem2_index, ch_fasta, true)
 
-    // ── Merge lane-level BAMs to one BAM per sample ────────────────────────
-    ch_bams_by_sample = TRIM_AND_MAP_FASTQ.out.bam
+    // ── Step 3: Merge lane-level BAMs to one BAM per sample ──────────────
+    ch_bams_by_sample = BWAMEM2_MEM.out.bam
         .map { meta, bam ->
             def sample_meta = [
-                id    : meta.sample,
-                sample: meta.sample,
+                id        : meta.sample,
+                sample    : meta.sample,
+                single_end: false,
             ]
             tuple(sample_meta, bam)
         }
         .groupTuple()
+        .map { meta, bams -> [meta, bams, []] }   // no index files needed for BAM merge
 
-    MERGE_LANE_BAMS(ch_bams_by_sample)
-    ch_versions = ch_versions.mix(MERGE_LANE_BAMS.out.versions)
+    // No fasta reference needed for BAM merge (only required for CRAM)
+    ch_merge_ref = Channel.value([[id: 'null'], [], [], []])
 
-    // ── Duplicate marking with sambamba ────────────────────────────────────
-    MARK_DUPLICATES(MERGE_LANE_BAMS.out.bam)
-    ch_versions = ch_versions.mix(MARK_DUPLICATES.out.versions)
+    SAMTOOLS_MERGE(ch_bams_by_sample, ch_merge_ref)
+
+    // ── Step 4: Duplicate marking with Picard MarkDuplicates ─────────────
+    // No fasta reference needed for BAM output
+    ch_markdup_ref = Channel.value([[id: 'null'], [], []])
+
+    PICARD_MARKDUPLICATES(SAMTOOLS_MERGE.out.bam, ch_markdup_ref)
 
     emit:
-    bam      = MARK_DUPLICATES.out.bam
-    bai      = MARK_DUPLICATES.out.bai
-    markdup  = MARK_DUPLICATES.out.bam
-    versions = ch_versions
+    bam     = PICARD_MARKDUPLICATES.out.bam
+    bai     = PICARD_MARKDUPLICATES.out.bai
+    metrics = PICARD_MARKDUPLICATES.out.metrics
 }
