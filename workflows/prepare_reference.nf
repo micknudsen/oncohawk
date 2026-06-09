@@ -20,8 +20,8 @@
 
 nextflow.enable.dsl = 2
 
-include { WGET         } from '../modules/local/wget/main'
-include { GUNZIP       } from '../modules/local/gunzip/main'
+include { WGET as WGET_GENOME_FASTA } from '../modules/local/wget/main'
+include { GUNZIP as GUNZIP_GENOME_FASTA } from '../modules/local/gunzip/main'
 include { BWAMEM2_INDEX } from '../modules/nf-core/bwamem2/index/main'
 
 workflow PREPARE_REFERENCE {
@@ -44,9 +44,9 @@ workflow PREPARE_REFERENCE {
             .fromPath(params.genome_fasta, checkIfExists: true)
             .map { fasta -> [[id: fasta.baseName], fasta] }
     } else {
-        WGET(Channel.value(params.genome_url))
-        GUNZIP(WGET.out.downloaded)
-        ch_fasta = GUNZIP.out.uncompressed
+        WGET_GENOME_FASTA(Channel.value(params.genome_url))
+        GUNZIP_GENOME_FASTA(WGET_GENOME_FASTA.out.downloaded)
+        ch_fasta = GUNZIP_GENOME_FASTA.out.uncompressed
             .map { fasta -> [[id: fasta.baseName], fasta] }
     }
 
