@@ -20,8 +20,8 @@
 
 nextflow.enable.dsl = 2
 
-include { WGET as WGET_GENOME_FASTA } from '../modules/local/wget/main'
-include { GUNZIP as GUNZIP_GENOME_FASTA } from '../modules/local/gunzip/main'
+include { WGET as WGET_GENOME_FASTA } from '../modules/nf-core/wget/main'
+include { GUNZIP as GUNZIP_GENOME_FASTA } from '../modules/nf-core/gunzip/main'
 include { BWAMEM2_INDEX } from '../modules/nf-core/bwamem2/index/main'
 
 workflow PREPARE_REFERENCE {
@@ -44,10 +44,17 @@ workflow PREPARE_REFERENCE {
             .fromPath(params.genome_fasta, checkIfExists: true)
             .map { fasta -> [[id: fasta.baseName], fasta] }
     } else {
-        WGET_GENOME_FASTA(Channel.value(params.genome_url))
-        GUNZIP_GENOME_FASTA(WGET_GENOME_FASTA.out.downloaded)
-        ch_fasta = GUNZIP_GENOME_FASTA.out.uncompressed
-            .map { fasta -> [[id: fasta.baseName], fasta] }
+        def downloaded_name = params.genome_url.tokenize('/').last()
+        def ext_idx = downloaded_name.lastIndexOf('.')
+        if (ext_idx <= 0) {
+            error "Genome URL must include a file extension: '${params.genome_url}'"
+        }
+        def downloaded_prefix = downloaded_name[0..<ext_idx]
+        def downloaded_suffix = downloaded_name[(ext_idx + 1)..-1]
+
+        WGET_GENOME_FASTA(Channel.value([[id: downloaded_prefix], params.genome_url, downloaded_suffix]))
+        GUNZIP_GENOME_FASTA(WGET_GENOME_FASTA.out.outfile)
+        ch_fasta = GUNZIP_GENOME_FASTA.out.gunzip
     }
 
     // ── bwa-mem2 index ──────────────────────────────────────────────────────
