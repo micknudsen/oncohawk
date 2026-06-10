@@ -32,8 +32,9 @@ def helpMessage() {
 
     Required arguments (for --workflow oncohawk):
         --input              Path to samplesheet CSV
-                             Columns: sample,library,flowcell,lane,fastq_1,fastq_2,spring
-                             Per row use either fastq_1+fastq_2 or spring (not both)
+                             Columns: sample_id,filetype,info,filepath
+                             Use filetype=fastq with two paths in filepath separated by ';'
+                             or filetype=spring with one archive path in filepath
         --genome_fasta       Path to reference FASTA
         --genome_bwamem2_index
                              Path to BWA-MEM2 index directory (bwamem2/)
