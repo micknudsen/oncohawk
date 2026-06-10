@@ -35,6 +35,11 @@
             "git_sha": "6d46786420b4d7bc88eba026eb389c0c5535d120",
             "installed_by": ["modules"]
           },
+          "spring/decompress": {
+            "branch": "master",
+            "git_sha": "6d46786420b4d7bc88eba026eb389c0c5535d120",
+            "installed_by": ["modules"]
+          },
           "wget": {
             "branch": "master",
             "git_sha": "8dfb9868efd0e39f27ae0fed1ed204dc8f0b2a13",

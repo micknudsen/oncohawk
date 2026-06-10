@@ -5,14 +5,14 @@
  *
  *  Expected CSV columns (header row required):
  *
- *      sample, library, flowcell, lane, fastq_1, fastq_2
+ *      sample, library, flowcell, lane, fastq_1, fastq_2, spring
  *
  *  One row per (sample, library, lane) — a sample sequenced across multiple
  *  lanes will appear on multiple rows and be merged downstream.
  *
  *  The parse(row) method returns a 3-tuple:
  *
- *      [ meta, fastq_1_file, fastq_2_file ]
+ *      [ meta, input_type, reads ]
  *
  *  where `meta` is a LinkedHashMap with:
  *
@@ -24,8 +24,12 @@
  *      read_group    — pre-formatted @RG string ready for `bwa-mem2 mem -R`
 
  *
- *  Paths in `fastq_1` / `fastq_2` may be absolute or relative to the directory
- *  containing the samplesheet (resolved upstream by Channel.fromPath).
+ *  Exactly one input type must be provided per row:
+ *      - FASTQ pair via fastq_1 + fastq_2
+ *      - SPRING archive via spring
+ *
+ *  Paths may be absolute or relative to directory containing samplesheet
+ *  (resolved upstream by Channel.fromPath).
  * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  */
 
@@ -39,17 +43,21 @@ class Samplesheet {
         'library',
         'flowcell',
         'lane',
+    ]
+
+    static final List<String> INPUT_COLUMNS = [
         'fastq_1',
         'fastq_2',
+        'spring',
     ]
 
 
     /**
-     * Parse a single CSV row (already split into a Map<String,String> by
-     * `splitCsv(header: true)`) into a [meta, r1, r2] tuple.
+    * Parse a single CSV row (already split into a Map<String,String> by
+    * `splitCsv(header: true)`) into a [meta, input_type, reads] tuple.
      *
-     * If `samplesheet_dir` is non-null, relative `fastq_1` / `fastq_2` paths
-     * are resolved against it (the directory containing the samplesheet).
+    * If `samplesheet_dir` is non-null, relative input paths are resolved
+    * against it (the directory containing the samplesheet).
      * Absolute paths are used as-is.
      */
     static List parse(Map row, Object samplesheet_dir = null) {
@@ -60,6 +68,12 @@ class Samplesheet {
         if (missing) {
             Nextflow.error("Samplesheet is missing required column(s): ${missing.join(', ')}. " +
                            "Required columns: ${REQUIRED_COLUMNS.join(', ')}")
+        }
+
+        def missing_input_cols = INPUT_COLUMNS.findAll { !row.containsKey(it) }
+        if (missing_input_cols) {
+            Nextflow.error("Samplesheet is missing required input column(s): ${missing_input_cols.join(', ')}. " +
+                           "Required input columns: ${INPUT_COLUMNS.join(', ')}")
         }
 
         // ── Validate non-empty required values ──────────────────────────────
@@ -73,8 +87,9 @@ class Samplesheet {
         def library    = row.library.toString().trim()
         def flowcell   = row.flowcell.toString().trim()
         def lane       = row.lane.toString().trim()
-        def fastq_1    = row.fastq_1.toString().trim()
-        def fastq_2    = row.fastq_2.toString().trim()
+        def fastq_1    = row.fastq_1?.toString()?.trim() ?: ''
+        def fastq_2    = row.fastq_2?.toString()?.trim() ?: ''
+        def spring     = row.spring?.toString()?.trim() ?: ''
 
         // ── Basic format validation ─────────────────────────────────────────
         if (!(lane ==~ /\d+/)) {
@@ -96,11 +111,28 @@ class Samplesheet {
             single_end : false,
         ]
 
-        // ── Resolve FASTQ paths (relative paths resolved against samplesheet dir) ──
-        def r1 = resolvePath(fastq_1, samplesheet_dir)
-        def r2 = resolvePath(fastq_2, samplesheet_dir)
+        def has_fastq = fastq_1 && fastq_2
+        def has_partial_fastq = (fastq_1 && !fastq_2) || (!fastq_1 && fastq_2)
+        def has_spring = spring as boolean
 
-        return [ meta, r1, r2 ]
+        if (has_partial_fastq) {
+            Nextflow.error("Samplesheet row must include both fastq_1 and fastq_2 when using FASTQ input (row: ${row})")
+        }
+        if (has_fastq && has_spring) {
+            Nextflow.error("Samplesheet row must specify either FASTQ columns (fastq_1, fastq_2) or spring, not both (row: ${row})")
+        }
+        if (!has_fastq && !has_spring) {
+            Nextflow.error("Samplesheet row must specify one input type: FASTQ pair (fastq_1, fastq_2) or spring (row: ${row})")
+        }
+
+        if (has_fastq) {
+            def r1 = resolvePath(fastq_1, samplesheet_dir)
+            def r2 = resolvePath(fastq_2, samplesheet_dir)
+            return [ meta, 'fastq', [r1, r2] ]
+        }
+
+        def spring_file = resolvePath(spring, samplesheet_dir)
+        return [ meta, 'spring', spring_file ]
     }
 
     /**
