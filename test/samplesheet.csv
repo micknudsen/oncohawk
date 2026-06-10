@@ -1,6 +1,0 @@
-sample,library,flowcell,lane,fastq_1,fastq_2
-sample_A,lib_A,FC1ABCXX,1,data/reads/sample_A_lib_A_L001_R1.fastq.gz,data/reads/sample_A_lib_A_L001_R2.fastq.gz
-sample_B,lib_B,FC1ABCXX,1,data/reads/sample_B_lib_B_L001_R1.fastq.gz,data/reads/sample_B_lib_B_L001_R2.fastq.gz
-sample_B,lib_B,FC1ABCXX,2,data/reads/sample_B_lib_B_L002_R1.fastq.gz,data/reads/sample_B_lib_B_L002_R2.fastq.gz
-sample_C,lib_C1,FC1ABCXX,2,data/reads/sample_C_lib_C1_L002_R1.fastq.gz,data/reads/sample_C_lib_C1_L002_R2.fastq.gz
-sample_C,lib_C2,FC1ABCXX,2,data/reads/sample_C_lib_C2_L002_R1.fastq.gz,data/reads/sample_C_lib_C2_L002_R2.fastq.gz

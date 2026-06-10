@@ -42,16 +42,12 @@ def helpMessage() {
         --publish_dir_mode   How to publish files: copy, symlink, link (default: 'copy')
 
     Profiles (-profile, comma-separated):
-        test                 Minimal synthetic dataset for local development
         hpc                  SLURM-based HPC configuration
         docker               Run processes in Docker containers
         singularity          Run processes in Singularity containers
         debug                Extra diagnostics, do not clean work dir
 
     Examples:
-        # Run on the bundled synthetic test data
-        nextflow run main.nf -profile test,docker
-
         # Prepare GRCh38 references (download + index)
         nextflow run main.nf --workflow prepare_reference -profile hpc,singularity
 
