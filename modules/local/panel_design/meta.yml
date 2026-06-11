@@ -1,0 +1,51 @@
+name: panel_design
+title: Design genomic panel from GTF and gene config
+summary: Extract CDS regions from GENCODE GTF for specified genes and transcripts
+description: |
+  Parses a JSON configuration specifying genes and transcripts of interest,
+  then extracts corresponding CDS (coding sequence) regions from a GENCODE GTF file.
+  Outputs a BED file with selected CDS regions for use in targeted sequencing panels.
+
+tools:
+  - pyranges:
+      description: Fast and intuitive Python library for genomic interval operations
+      homepage: https://github.com/endrebak/pyranges
+      documentation: https://github.com/endrebak/pyranges
+      tool_dev_url: https://github.com/endrebak/pyranges
+      licence: ['MIT']
+
+input:
+  - meta:
+      type: map
+      description: Metadata dict with sample id
+      pattern: "id"
+  - gtf:
+      type: file
+      description: GENCODE GTF file (gzipped or not)
+      pattern: "*.gtf{,.gz}"
+  - config_json:
+      type: file
+      description: |
+        JSON config file specifying genes and transcripts to include.
+        Format: { "genes": [ { "gene_name": "KIT", "hgnc_id": "HGNC:6342", 
+                    "transcripts": [ { "transcript_id": "ENST...", "cds": "all" | [1,2,5] } ] } ] }
+
+output:
+  - meta:
+      type: map
+      description: Metadata dict with sample id
+  - bed:
+      type: file
+      description: BED file with selected CDS regions
+      pattern: "*.bed"
+  - log:
+      type: file
+      description: Execution log
+      pattern: "*.log"
+  - versions:
+      type: file
+      description: File containing software versions
+      pattern: "versions.yml"
+
+authors:
+  - "@michaelk"

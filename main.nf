@@ -29,6 +29,7 @@ def helpMessage() {
     Workflows (--workflow):
         oncohawk             Main analysis workflow (default)
         prepare_reference   Download and index the GRCh38 reference genome
+        prepare_panel       Design genomic panel from GENCODE GTF and gene config
 
     Required arguments (for --workflow oncohawk):
         --input              Path to samplesheet CSV
@@ -70,6 +71,7 @@ def helpMessage() {
 
 include { ONCOHAWK            } from './workflows/oncohawk'
 include { PREPARE_REFERENCE  } from './workflows/prepare_reference'
+include { PREPARE_PANEL      } from './workflows/prepare_panel'
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -95,9 +97,12 @@ workflow {
     else if (params.workflow == 'prepare_reference') {
         PREPARE_REFERENCE()
     }
+    else if (params.workflow == 'prepare_panel') {
+        PREPARE_PANEL()
+    }
     else {
         error "Unknown workflow: '${params.workflow}'. " +
-              "Valid options are: 'oncohawk', 'prepare_reference'. " +
+              "Valid options are: 'oncohawk', 'prepare_reference', 'prepare_panel'. " +
               "See `nextflow run main.nf --help` for usage."
     }
 
