@@ -78,8 +78,15 @@ class GTFPanelBuilder:
                                 cds_df = cds_ranges.df.copy()
                 
                                 # Filter by CDS spec if not "all"
-                                if cds_spec != "all" and isinstance(cds_spec, list):
+                                if cds_spec == "all":
+                                    pass
+                                elif isinstance(cds_spec, list):
                                         cds_df = cds_df[cds_df["cds_index"].isin(cds_spec)]
+                                else:
+                                    raise ValueError(
+                                        f"Invalid cds spec for {transcript_id}: {cds_spec!r}. "
+                                        "Expected 'all' or list of CDS indexes."
+                                    )
                 
                                 # Build BED entries
                                 for _, row in cds_df.iterrows():
