@@ -1,8 +1,0 @@
-name: panel_design
-channels:
-  - conda-forge
-  - bioconda
-dependencies:
-  - python=3.11
-  - pyranges
-  - pandas
