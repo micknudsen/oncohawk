@@ -6,8 +6,10 @@
 
       1. `params.genome_fasta` is set  → use that FASTA as-is, build only
          the index if it doesn't already exist.
-      2. otherwise                     → download from `params.genome_url`
-         (default: GRCh38 no-alt analysis set), then index.
+        2. otherwise                     → download from `params.genome_url`
+            (default: GRCh38 no-alt analysis set), then index.
+        3. always                        → download GENCODE GTF from
+            `params.gencode_gtf_url` for downstream panel design.
 
     Emits a single value channel `ch_reference` containing
         tuple( meta, path("bwamem2") )   — the bwa-mem2 index directory
@@ -21,6 +23,7 @@
 nextflow.enable.dsl = 2
 
 include { WGET as WGET_GENOME_FASTA } from '../modules/nf-core/wget/main'
+include { WGET as WGET_GENCODE_GTF } from '../modules/nf-core/wget/main'
 include { GUNZIP as GUNZIP_GENOME_FASTA } from '../modules/nf-core/gunzip/main'
 include { BWAMEM2_INDEX } from '../modules/nf-core/bwamem2/index/main'
 
@@ -36,7 +39,20 @@ workflow PREPARE_REFERENCE {
         Reference directory : ${params.reference_dir}
         Genome FASTA        : ${params.genome_fasta ?: '(will download)'}
         Genome URL          : ${params.genome_url}
+        GENCODE GTF URL     : ${params.gencode_gtf_url}
         """.stripIndent()
+
+    // ── Download GENCODE GTF for panel design ─────────────────────────────
+    def gtf_downloaded_name = params.gencode_gtf_url.tokenize('/').last()
+    def gtf_ext_idx = gtf_downloaded_name.lastIndexOf('.')
+    if (gtf_ext_idx <= 0) {
+        error "GENCODE GTF URL must include a file extension: '${params.gencode_gtf_url}'"
+    }
+    def gtf_downloaded_prefix = gtf_downloaded_name[0..<gtf_ext_idx]
+    def gtf_downloaded_suffix = gtf_downloaded_name[(gtf_ext_idx + 1)..-1]
+
+    WGET_GENCODE_GTF(Channel.value([[id: gtf_downloaded_prefix], params.gencode_gtf_url, gtf_downloaded_suffix]))
+    ch_gencode_gtf = WGET_GENCODE_GTF.out.outfile
 
     // ── Source FASTA: either user-provided or downloaded ────────────────────
     if (params.genome_fasta) {
@@ -64,4 +80,5 @@ workflow PREPARE_REFERENCE {
 
     emit:
     reference = BWAMEM2_INDEX.out.index
+    gencode_gtf = ch_gencode_gtf
 }
