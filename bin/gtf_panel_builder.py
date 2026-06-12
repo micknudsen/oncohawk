@@ -33,8 +33,16 @@ class GTFPanelBuilder:
                 "start": 28033815,
                 "end": 28034477
             }
-        ]
+        ],
+        "settings": {
+            "cds_padding": 3
+        }
     }
+
+    Notes:
+    - settings.cds_padding applies to CDS-derived intervals only.
+    - Padding expands both sides: start - padding, end + padding.
+    - Start is clamped at 0.
 
     Output: BED6 file with regions (CDS selected or all exons).
     """
@@ -63,6 +71,15 @@ class GTFPanelBuilder:
         """
         with open(json_path) as f:
             config = json.load(f)
+
+        settings = config.get("settings", {})
+        cds_padding = settings.get("cds_padding", 0)
+
+        if not isinstance(cds_padding, int) or cds_padding < 0:
+            raise ValueError(
+                f"Invalid settings.cds_padding: {cds_padding!r}. "
+                "Expected non-negative integer."
+            )
 
         bed_list = []
 
@@ -134,11 +151,13 @@ class GTFPanelBuilder:
 
                 # Build BED entries
                 for _, row in cds_df.iterrows():
+                    start = max(0, int(row["Start"]) - cds_padding)
+                    end = int(row["End"]) + cds_padding
                     bed_list.append(
                         {
                             "Chromosome": row["Chromosome"],
-                            "Start": row["Start"],
-                            "End": row["End"],
+                            "Start": start,
+                            "End": end,
                             "Name": f"{gene_name}_{transcript_id}_{row['cds_index']}",
                             "Score": 0,
                             "Strand": row["Strand"],
