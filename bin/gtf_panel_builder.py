@@ -25,6 +25,14 @@ class GTFPanelBuilder:
                     }
                 ]
             }
+        ],
+        "regions": [
+            {
+                "name": "FLT3_ITD",
+                "chromosome": "chr13",
+                "start": 28033815,
+                "end": 28034477
+            }
         ]
     }
 
@@ -57,6 +65,42 @@ class GTFPanelBuilder:
             config = json.load(f)
 
         bed_list = []
+
+        # Optional regions are added directly as BED intervals.
+        for region in config.get("regions", []):
+            name = region.get("name")
+            chromosome = region.get("chromosome")
+            start = region.get("start")
+            end = region.get("end")
+
+            if not name or not chromosome:
+                raise ValueError(
+                    f"Invalid region entry: {region!r}. "
+                    "Expected non-empty name and chromosome."
+                )
+
+            if not isinstance(start, int) or not isinstance(end, int):
+                raise ValueError(
+                    f"Invalid region coordinates for {name}: "
+                    f"start={start!r}, end={end!r}. Expected integers."
+                )
+
+            if start < 0 or end <= start:
+                raise ValueError(
+                    f"Invalid region coordinates for {name}: "
+                    f"start={start}, end={end}. Expected 0 <= start < end."
+                )
+
+            bed_list.append(
+                {
+                    "Chromosome": chromosome,
+                    "Start": start,
+                    "End": end,
+                    "Name": name,
+                    "Score": 0,
+                    "Strand": ".",
+                }
+            )
 
         for gene_entry in config.get("genes", []):
             gene_name = gene_entry.get("gene_name")
@@ -102,7 +146,9 @@ class GTFPanelBuilder:
                     )
 
         if not bed_list:
-            raise ValueError("No CDS regions found for specified genes/transcripts")
+            raise ValueError(
+                "No regions found. Check genes/transcripts and regions config."
+            )
 
         bed_df = pd.DataFrame(bed_list)
         # Sort by chromosome and start position
