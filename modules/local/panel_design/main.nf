@@ -3,7 +3,9 @@ process PANEL_DESIGN {
     tag "$meta.id"
     label 'process_low'
     conda "${moduleDir}/environment.yml"
-    container "python:3.11-slim"
+    container "${workflow.containerEngine in ['singularity', 'apptainer'] && !task.ext.singularity_pull_docker_container ?
+        'https://depot.galaxyproject.org/singularity/pyranges:0.1.4--pyhdfd78af_0' :
+        'quay.io/biocontainers/pyranges:0.1.4--pyhdfd78af_0'}"
 
     input:
     tuple val(meta), path(gtf)
@@ -18,8 +20,6 @@ process PANEL_DESIGN {
     script:
     """
     set -euo pipefail
-
-    pip install -q pyranges pandas
 
     python ${script} \
         --gtf ${gtf} \
