@@ -1,0 +1,1020 @@
+{
+  "genes": [
+    {
+      "hgnc_id": "HGNC:18318",
+      "gene_name": "ASXL1",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000375687.10",
+          "cds": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:20893",
+      "gene_name": "BCOR",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000378444.9",
+          "cds": [
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:25657",
+      "gene_name": "BCORL1",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000540052.6",
+          "cds": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:1097",
+      "gene_name": "BRAF",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000646891.2",
+          "cds": [
+            15
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:1455",
+      "gene_name": "CALR",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000316448.10",
+          "cds": [
+            9
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:1541",
+      "gene_name": "CBL",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000264033.6",
+          "cds": [
+            8,
+            9
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:1833",
+      "gene_name": "CEBPA",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000498907.3",
+          "cds": [
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:2439",
+      "gene_name": "CSF3R",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000373106.6",
+          "cds": [
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:2557",
+      "gene_name": "CUX1",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000292535.12",
+          "cds": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:18674",
+      "gene_name": "DDX41",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000330503.12",
+          "cds": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:2978",
+      "gene_name": "DNMT3A",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000321117.10",
+          "cds": [
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:3495",
+      "gene_name": "ETV6",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000396373.9",
+          "cds": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:3527",
+      "gene_name": "EZH2",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000320356.7",
+          "cds": [
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:3765",
+      "gene_name": "FLT3",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000241453.12",
+          "cds": [
+            20
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:4170",
+      "gene_name": "GATA1",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000376670.9",
+          "cds": [
+            2,
+            3,
+            4,
+            5,
+            6
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:4171",
+      "gene_name": "GATA2",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000341105.7",
+          "cds": [
+            2,
+            3,
+            4,
+            5,
+            6
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:5382",
+      "gene_name": "IDH1",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000345146.7",
+          "cds": [
+            4
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:5383",
+      "gene_name": "IDH2",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000330062.8",
+          "cds": [
+            4
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:6192",
+      "gene_name": "JAK2",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000381652.4",
+          "cds": [
+            12,
+            14
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:6342",
+      "gene_name": "KIT",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000288135.6",
+          "cds": [
+            2,
+            8,
+            9,
+            10,
+            11,
+            13,
+            17
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:6407",
+      "gene_name": "KRAS",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000311936.8",
+          "cds": [
+            2,
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:7217",
+      "gene_name": "MPL",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000372470.9",
+          "cds": [
+            10
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:7553",
+      "gene_name": "MYC",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000621592.8",
+          "cds": [
+            1,
+            2,
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:7765",
+      "gene_name": "NF1",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000358273.9",
+          "cds": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            28,
+            29,
+            30,
+            31,
+            32,
+            33,
+            34,
+            35,
+            36,
+            37,
+            38,
+            39,
+            40,
+            41,
+            42,
+            43,
+            44,
+            45,
+            46,
+            47,
+            48,
+            49,
+            50,
+            51,
+            52,
+            53,
+            54,
+            55,
+            56,
+            57,
+            58
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:7910",
+      "gene_name": "NPM1",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000296930.10",
+          "cds": [
+            11
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:7989",
+      "gene_name": "NRAS",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000369535.5",
+          "cds": [
+            2,
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:18145",
+      "gene_name": "PHF6",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000370803.8",
+          "cds": [
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:8957",
+      "gene_name": "PIGA",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000333590.6",
+          "cds": [
+            2,
+            3,
+            4,
+            5,
+            6
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:9277",
+      "gene_name": "PPM1D",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000305921.8",
+          "cds": [
+            6
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:9644",
+      "gene_name": "PTPN11",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000351677.7",
+          "cds": [
+            3,
+            13,
+            14
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:9811",
+      "gene_name": "RAD21",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000297338.7",
+          "cds": [
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:10471",
+      "gene_name": "RUNX1",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000675419.1",
+          "cds": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:15573",
+      "gene_name": "SETBP1",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000649279.2",
+          "cds": [
+            4
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:10768",
+      "gene_name": "SF3B1",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000335508.11",
+          "cds": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:11111",
+      "gene_name": "SMC1A",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000322213.9",
+          "cds": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:2468",
+      "gene_name": "SMC3",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000361804.5",
+          "cds": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            28,
+            29
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:10783",
+      "gene_name": "SRSF2",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000359995.10",
+          "cds": [
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:11355",
+      "gene_name": "STAG2",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000371145.8",
+          "cds": [
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            28,
+            29,
+            30,
+            31,
+            32,
+            33,
+            34,
+            35
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:11364",
+      "gene_name": "STAT3",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000264657.10",
+          "cds": [
+            19,
+            20,
+            21
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:11366",
+      "gene_name": "STAT5A",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000590949.6",
+          "cds": [
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:11367",
+      "gene_name": "STAT5B",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000293328.8",
+          "cds": [
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:17101",
+      "gene_name": "SUZ12",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000322652.10",
+          "cds": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:25941",
+      "gene_name": "TET2",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000380013.9",
+          "cds": [
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:11998",
+      "gene_name": "TP53",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000269305.9",
+          "cds": [
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:12453",
+      "gene_name": "U2AF1",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000291552.9",
+          "cds": [
+            2,
+            6
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:12796",
+      "gene_name": "WT1",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000452863.10",
+          "cds": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10
+          ]
+        }
+      ]
+    },
+    {
+      "hgnc_id": "HGNC:23019",
+      "gene_name": "ZRSR2",
+      "transcripts": [
+        {
+          "transcript_id": "ENST00000307771.8",
+          "cds": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11
+          ]
+        }
+      ]
+    }
+  ],
+  "regions": [
+    {
+      "name": "FLT3_ITD",
+      "chromosome": "chr13",
+      "start": 28033815,
+      "end": 28034477
+    }
+  ],
+  "settings": {
+    "cds_padding": 3
+  }
+}
