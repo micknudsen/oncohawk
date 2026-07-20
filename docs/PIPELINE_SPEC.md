@@ -35,21 +35,72 @@ record must provide separate, non-interleaved R1 and R2 files. SPRING-compressed
 FASTQ is outside the current target contract and may be considered in a later
 increment.
 
-One submitted sample represents one tumor specimen. Multiple library and lane
-records may refer to that sample. The future sample-sheet contract will have
-one row per library and lane and require these fields:
+One analysis represents one tumor sample. A single run may include multiple
+independent samples from multiple patients. Multiple library, flowcell, and
+lane records may refer to one sample.
 
-- `case_id`;
-- `sample_id`;
-- `specimen_id`;
+### Sample-sheet contract
+
+The future sample sheet is a headered CSV file with these exact columns in this
+order:
+
+```csv
+patient_id,sample_id,filetype,info,filepath
+```
+
+`patient_id` and `sample_id` are required. A patient may have multiple samples,
+including longitudinal samples. Each `sample_id` is globally unique and maps to
+exactly one `patient_id`; it may occur in multiple library, flowcell, and lane
+rows. This document does not define identifier content or data-governance rules.
+
+`filetype` is required and must be `fastq` in the current target contract. The
+field is retained so that a future, separately approved contract may define
+other input types. It does not grant current BAM, CRAM, or SPRING support.
+
+`info` is a required, semicolon-separated list of `key:value` entries. It must
+contain exactly one of each required key:
+
 - `library_id`;
-- `lane_id`;
-- `read_group_id`;
-- `fastq_r1`; and
-- `fastq_r2`.
+- `flowcell_id`; and
+- `lane`.
 
-This document does not define identifier content, data-governance rules, or
-whether an identifier is pseudonymous. It requires only the listed fields.
+It may contain one `platform` entry. If omitted, `platform` is `ILLUMINA`.
+No other keys are permitted by the current target contract. The platform
+vocabulary beyond the default is not decided here; a supplied value must be
+non-empty.
+
+`filepath` is required and contains exactly two semicolon-separated paths: R1
+then R2. Both paths must name non-interleaved `.fastq.gz` files. Relative paths
+are resolved from the directory containing the sample sheet.
+
+The tuple (`sample_id`, `library_id`, `flowcell_id`, `lane`) must be unique.
+The sample sheet does not contain a read-group identifier. A future pipeline
+will construct GATK-compatible read groups deterministically from the sample,
+library, flowcell, lane, and platform metadata. It will set sample (`SM`) from
+`sample_id`, library (`LB`) from `library_id`, and platform (`PL`) from the
+provided or defaulted platform value. The exact serialization of the generated
+read-group ID (`ID`) and platform unit (`PU`) remains an implementation matter.
+
+The target contract requires structural validation of the exact headers,
+required fields, `filetype`, `info` grammar and keys, path-pair grammar, sample
+to patient mapping, and the unique tuple. It does not require a file-existence,
+readability, or FASTQ-content scan.
+
+Valid synthetic example:
+
+```csv
+patient_id,sample_id,filetype,info,filepath
+patient_001,sample_001,fastq,library_id:lib_A;flowcell_id:FC123;lane:001,fastq/sample_001/lib_A_FC123_L001_R1.fastq.gz;fastq/sample_001/lib_A_FC123_L001_R2.fastq.gz
+patient_001,sample_001,fastq,library_id:lib_A;flowcell_id:FC123;lane:002,fastq/sample_001/lib_A_FC123_L002_R1.fastq.gz;fastq/sample_001/lib_A_FC123_L002_R2.fastq.gz
+patient_001,sample_002,fastq,library_id:lib_B;flowcell_id:FC456;lane:001;platform:ILLUMINA,fastq/sample_002/lib_B_FC456_L001_R1.fastq.gz;fastq/sample_002/lib_B_FC456_L001_R2.fastq.gz
+patient_002,sample_003,fastq,library_id:lib_C;flowcell_id:FC789;lane:001,fastq/sample_003/lib_C_FC789_L001_R1.fastq.gz;fastq/sample_003/lib_C_FC789_L001_R2.fastq.gz
+```
+
+Examples of structural failures include a repeated
+(`sample_id`, `library_id`, `flowcell_id`, `lane`) tuple; one `sample_id`
+mapped to different patients; a missing `library_id`, `flowcell_id`, or `lane`;
+an unrecognized `info` key; a non-`fastq` filetype; or a `filepath` value that
+does not contain exactly two `.fastq.gz` paths in R1/R2 order.
 
 The contract does not require a separate, full-file preflight scan to establish
 read-name or pair consistency before processing begins. It does require that
