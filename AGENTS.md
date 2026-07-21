@@ -87,6 +87,11 @@ or editing a pull request, changing repository settings, releasing, and merging
 remain separate permission boundaries unless the owner explicitly authorizes a
 named combination.
 
+Open pull requests ready for review by default. Use a draft pull request only
+when the owner explicitly requests one or a concrete known blocker makes the
+change unready for review. When a blocker requires draft status, state the
+blocker clearly.
+
 ## Development discipline
 
 - Work in small, self-contained, testable, and reviewable increments.
