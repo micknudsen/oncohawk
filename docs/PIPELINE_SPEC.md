@@ -2,9 +2,9 @@
 
 ## Scope of this document
 
-This draft defines OncoHawk's intended use, input and reference boundary, and
-reporting boundary. It is a target contract and does not describe implemented
-or verified analytical behavior.
+This draft defines OncoHawk's intended use, input and reference boundary,
+variant-class boundary, and reporting boundary. It is a target contract and
+does not describe implemented or verified analytical behavior.
 
 OncoHawk currently has no analytical implementation, analytical or scientific
 validation, or release. No claim is made that it is clinical-grade or
@@ -131,6 +131,43 @@ masking preserves the source GRCh38 coordinate system. The downloaded source
 artifacts must be verified against the pinned checksums, and the checksum of
 the derived masked reference must be recorded for each reference build.
 
+## Variant and MVP reporting boundary
+
+The target contract requires genome-wide calling of single-nucleotide variants
+(SNVs), insertions and deletions (indels), and structural variants (SVs).
+Genome-wide call sets must be retained so that a sample can be re-analysed
+against updated approved resources without repeating variant calling. The exact
+formats and retention requirements for these call sets remain open.
+
+The MVP report contains two finding categories: **Variants** and
+**Translocations**. These are biological reporting categories, not partitions
+based on variant size or a caller's representation. Report inclusion is limited
+to findings matched by approved predefined resources.
+
+**Variants** contains findings that annotation predicts will affect one gene
+and that match an approved AML/MDS gene or hotspot resource. This category may
+include SNVs, indels, and single-gene events represented by an SV caller. For
+example, an `FLT3` internal tandem duplication or a `KMT2A` partial tandem
+duplication belongs in **Variants**, irrespective of its underlying caller
+representation. The exact annotation consequences, transcript policy,
+resources, and inclusion rules remain open.
+
+**Translocations** contains events predicted to join gene partners that match
+an approved predefined recurrent-fusion resource. Inclusion is independent of
+whether the underlying event is represented as a BND, deletion, duplication,
+inversion, or another suitable SV representation. Genome-wide SV calls are
+retained, but novel or otherwise potentially interesting fusions outside the
+predefined resource are not included in the MVP report.
+
+Copy-number alterations (CNAs, also called CNVs) are deferred. Reliable
+tumor-only CNA analysis requires a separately designed read-depth background,
+including an appropriate panel of normals. The panel's construction,
+provenance, matching requirements, and validation remain open. Because CNA
+analysis is outside the MVP, the MVP report omits a CNA section.
+
+Handling of potentially germline findings is not defined by this variant-class
+boundary and remains a separate matter spanning calling and filtering.
+
 ## Reporting boundary
 
 The final report is intended for clinicians. It is not intended to be a
@@ -150,7 +187,7 @@ or decision-making workflows.
 
 This document does not yet decide:
 
-- supported variant classes or analytical methods;
+- analytical methods, tools, or caller-specific representations;
 - the contents, evidence hierarchy, provenance, release process, or retirement
   process for curated resources;
 - transcript or annotation requirements;
