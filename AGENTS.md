@@ -124,6 +124,38 @@ publishing the next increment. Codex sandbox, Auto-review, managed policy, and
 command-rule enforcement remain independent controls and may still deny an
 action.
 
+### Staged proposal-to-PR authorization
+
+After a next issue-sized increment has been proposed, the owner may advance it
+through these three explicit stages. Completion of one stage does not imply
+acceptance of the next.
+
+1. **Accept proposal.** When the owner unambiguously accepts the latest
+   proposal, create exactly one GitHub issue containing it. Do not create a
+   branch, modify files, install or download dependencies, generate resources,
+   run state-producing workflows, commit, push, or open a pull request.
+2. **Accept issue.** When the owner subsequently and unambiguously accepts that
+   issue, create and switch to one short-lived branch, perform only its local
+   implementation, and run only its approved verification. Ask all material
+   questions needed to complete the issue before implementing behavior affected
+   by an unresolved answer; independent work whose requirements are settled may
+   continue. This stage authorizes only dependencies, downloads, generated
+   resources, and state-producing workflows explicitly listed in the accepted
+   issue. If answers or discoveries materially change the goal, files, external
+   state, decisions, risks, dependencies, or verification, stop and present a
+   revised proposal for acceptance. When local work and verification are
+   complete, report that the issue appears ready; do not commit or publish.
+3. **Make PR.** When the owner says `make PR` for that completed issue, stage
+   only its intended files, create one focused commit, push its short-lived
+   branch, open one ready-for-review pull request targeting `master`, link the
+   pull request so merging it closes the primary issue, and confirm required CI
+   status. This stage does not authorize merging.
+
+At every stage, stop on ambiguity, unrelated or dirty worktree changes, failed
+verification, or a scope conflict. After the owner reports the pull request as
+merged, apply the standing post-merge cleanup authorization and return to a
+proposal for the next increment.
+
 ## Development discipline
 
 - Work in small, self-contained, testable, and reviewable increments.
