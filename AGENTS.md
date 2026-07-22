@@ -92,6 +92,38 @@ when the owner explicitly requests one or a concrete known blocker makes the
 change unready for review. When a blocker requires draft status, state the
 blocker clearly.
 
+### Standing post-merge cleanup authorization
+
+When the owner explicitly states that a pull request has been merged, that
+statement authorizes the following post-merge cleanup without separate
+permission for each listed Git or GitHub action:
+
+1. Resolve the pull request unambiguously and verify through GitHub that it is
+   merged.
+2. Record its exact head repository, branch, and commit. Require a clean working
+   tree, and verify that any matching local branch still points to that commit.
+3. Refuse cleanup if the pull request or branch is ambiguous or unverified; if
+   the working tree is dirty; or if the deletion target is a default, protected,
+   or unrelated branch.
+4. Delete the exact remote head branch if it still exists. Treat an already-
+   absent remote branch as successfully cleaned up; stop on any other deletion
+   failure.
+5. Switch to `master`, fetch and prune `origin`, and update local `master` only
+   with `git merge --ff-only origin/master`. Stop rather than reset, rebase,
+   force, or otherwise resolve divergence automatically.
+6. Delete the exact local head branch. Use ordinary deletion when possible. A
+   forced local deletion is permitted only when GitHub verified the pull request
+   as merged and the local branch still matched the recorded head commit before
+   switching to `master`; this accommodates squash merges.
+7. Verify that local `master` is clean and synchronized with `origin/master`,
+   then propose one next issue-sized increment without beginning it.
+
+This standing authorization does not authorize merging, releasing, changing
+repository settings, creating the proposed next issue, or implementing or
+publishing the next increment. Codex sandbox, Auto-review, managed policy, and
+command-rule enforcement remain independent controls and may still deny an
+action.
+
 ## Development discipline
 
 - Work in small, self-contained, testable, and reviewable increments.
