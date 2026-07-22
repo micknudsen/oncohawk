@@ -3,8 +3,9 @@
 ## Scope of this document
 
 This draft defines OncoHawk's intended use, input and reference boundary,
-variant-class boundary, and reporting boundary. It is a target contract and
-does not describe implemented or verified analytical behavior.
+variant-class boundary, reporting boundary, and initial runtime and engineering-
+verification boundary. It is a target contract and does not describe
+implemented or verified analytical behavior.
 
 OncoHawk currently has no analytical implementation, analytical or scientific
 validation, or release. No claim is made that it is clinical-grade or
@@ -183,6 +184,63 @@ The report will not provide:
 The project does not define or validate downstream clinical review, sign-out,
 or decision-making workflows.
 
+## Runtime and engineering-verification boundary
+
+The initial workflow implementation will use Nextflow DSL2 on Linux. Native
+macOS, native Windows, and Windows Subsystem for Linux execution are not initial
+support targets; this does not assert that the workflow cannot run on them.
+
+The required Nextflow release is exactly `26.04.6`, the newest stable release
+available when this contract was written. A future executable configuration
+must set `manifest.nextflowVersion = '!26.04.6'`, and developer and continuous-
+integration entry points must select `NXF_VER=26.04.6`. Updating Nextflow
+requires a reviewed change that updates both pins and reruns the applicable
+engineering tests. No unbounded minimum-version or latest-version declaration
+meets this contract.
+
+Fast engineering tests must run on Linux with Nextflow's local executor and
+wholly synthetic inputs. They must not require an HPC scheduler, production
+storage, protected data, or network access during execution. Slurm with
+Apptainer is the required initial HPC compatibility target. Executor profiles,
+resource policies, shared-cache and filesystem requirements, Apptainer launch
+configuration, and environment-specific integration tests remain for a later
+approved increment. Until those tests exist and pass on the target environment,
+Slurm and Apptainer compatibility is intended rather than implemented or
+verified behavior.
+
+Workflow orchestration will connect channels, workflows, and subworkflows; it
+will not embed the command implementation of analytical tools. A process that
+wraps an external tool must have one coherent responsibility, declare version-
+pinned and reconstructable dependencies, and remain reusable independently of
+reporting policy. Future analytical wrappers will use applicable nf-core
+component conventions as design guidance. This does not make OncoHawk an
+nf-core pipeline or require compliance with the full nf-core pipeline template.
+The need for targeted `nf-core modules lint` checks will be decided with the
+first analytical module.
+
+Structural input validation must be separately testable and complete before
+analytical processes consume a sample-sheet record. The first executable
+increment is therefore structural sample-sheet validation, not analytical
+processing.
+
+The engineering-test framework is nf-test. Its exact version must be pinned in
+the separately approved increment that first adds the dependency. The minimum
+engineering-verification layers for executable behavior are:
+
+- native Nextflow linting for the workflow code in scope;
+- focused nf-test assertions for functions, processes, or workflows at the
+  narrowest useful boundary, including positive and negative cases;
+- a local-executor smoke test of the affected end-to-end workflow path; and
+- environment-specific integration tests before claiming implemented support
+  for an HPC executor or production container runtime.
+
+Tests must use the smallest wholly synthetic fixtures that exercise the stated
+contract. Snapshot tests may supplement explicit assertions, but a stored
+snapshot alone is not evidence that a result is scientifically correct.
+Engineering tests prove only the behavior they assert. They are not analytical
+or scientific validation and do not establish clinical readiness, performance,
+or suitability for patient-care decisions.
+
 ## Open matters
 
 This document does not yet decide:
@@ -193,8 +251,11 @@ This document does not yet decide:
 - transcript or annotation requirements;
 - reporting thresholds, prioritization rules, or the report schema;
 - technical, audit, or downstream machine-readable outputs;
-- runtime or execution architecture;
-- engineering-test requirements;
+- Slurm profiles, resource policies, and site-specific execution configuration;
+- production Apptainer image, provenance, cache, and launch requirements;
+- cloud and managed-execution support;
+- the exact nf-test version and targeted nf-core module checks to use when
+  their respective dependencies are first introduced;
 - analytical and scientific validation requirements;
 - regulatory and quality-management requirements; or
 - release criteria.
