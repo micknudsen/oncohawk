@@ -1,0 +1,54 @@
+nextflow_function {
+    name 'Validate sample sheet'
+    script '../../../subworkflows/local/validate_samplesheet.nf'
+    function 'validateSamplesheet'
+
+    test('normalizes a valid synthetic sample sheet') {
+        when {
+            function {
+                """
+                input[0] = file("${projectDir}/tests/fixtures/valid.csv")
+                """
+            }
+        }
+
+        then {
+            assert function.success
+            assert function.result.size() == 3
+            assert function.result[0].patient_id == 'patient_001'
+            assert function.result[0].platform == 'ILLUMINA'
+            assert function.result[0].r1_path.endsWith('lib_A_FC123_L001_R1_001.fastq.gz')
+            assert function.result[0].r2_path.endsWith('lib_A_FC123_L001_R2_001.fastq.gz')
+            assert function.result[1].r1_path.endsWith('lib_A_FC123_L002_R1.fq.gz')
+            assert function.result[1].r2_path.endsWith('lib_A_FC123_L002_R2.fq.gz')
+        }
+    }
+
+    [
+        'invalid_header.csv': 'header: expected exactly',
+        'invalid_missing_field.csv': 'sample_id: value is required',
+        'invalid_filetype.csv': "filetype: must equal 'fastq'",
+        'invalid_info.csv': "info: unknown key 'unknown'",
+        'invalid_duplicate_info.csv': "info: key 'library_id' must occur exactly once",
+        'invalid_paths.csv': 'filepath: first path must name a .fastq.gz or .fq.gz file with an R1 mate token',
+        'invalid_mapping.csv': "sample_id: 'sample_001' maps to more than one patient_id",
+        'invalid_tuple.csv': 'duplicate (sample_id, library_id, flowcell_id, lane) tuple',
+        'invalid_quoted_field.csv': 'quoted CSV fields are not supported',
+        'invalid_whitespace.csv': 'sample_id: whitespace is not permitted'
+    ].each { fixture, diagnostic ->
+        test("rejects ${fixture}") {
+            when {
+                function {
+                    """
+                    input[0] = file("${projectDir}/tests/fixtures/${fixture}")
+                    """
+                }
+            }
+
+            then {
+                assert function.failed
+                assert function.stdout.any { line -> line.contains(diagnostic) }
+            }
+        }
+    }
+}

@@ -1,0 +1,2 @@
+patient_id,sample_id,filetype,info,filepath
+patient_001,sample_001,fastq,library_id:lib_A;flowcell_id:FC123;unknown:value,reads_R1.fastq.gz;reads_R2.fastq.gz
