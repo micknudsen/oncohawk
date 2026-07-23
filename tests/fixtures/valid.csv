@@ -1,0 +1,4 @@
+patient_id,sample_id,filetype,info,filepath
+patient_001,sample_001,fastq,library_id:lib_A;flowcell_id:FC123;lane:001,fastq/sample_001/lib_A_FC123_L001_R1_001.fastq.gz;fastq/sample_001/lib_A_FC123_L001_R2_001.fastq.gz
+patient_001,sample_001,fastq,library_id:lib_A;flowcell_id:FC123;lane:002,fastq/sample_001/lib_A_FC123_L002_R1.fq.gz;fastq/sample_001/lib_A_FC123_L002_R2.fq.gz
+patient_001,sample_002,fastq,library_id:lib_B;flowcell_id:FC456;lane:001;platform:ILLUMINA,fastq/sample_002/lib_B_FC456_L001_R1.fastq.gz;fastq/sample_002/lib_B_FC456_L001_R2.fastq.gz

@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly nextflow_version='26.04.6'
+readonly nf_test_version='0.9.5'
+readonly tool_cache="${TMPDIR:-/tmp}/oncohawk-tools"
+readonly nextflow_bin="${tool_cache}/nextflow"
+readonly nf_test_bin="${tool_cache}/nf-test"
+
+if [[ -n "${NXF_VER:-}" && "${NXF_VER}" != "${nextflow_version}" ]]; then
+    printf 'Refusing unapproved Nextflow version: %s (expected %s)\n' "${NXF_VER}" "${nextflow_version}" >&2
+    exit 2
+fi
+
+mkdir -p "${tool_cache}"
+
+if [[ ! -x "${nextflow_bin}" ]]; then
+    curl --fail --location --silent --show-error \
+        "https://github.com/nextflow-io/nextflow/releases/download/v${nextflow_version}/nextflow" \
+        --output "${nextflow_bin}"
+    chmod +x "${nextflow_bin}"
+fi
+
+if [[ ! -x "${nf_test_bin}" ]]; then
+    archive="${tool_cache}/nf-test-${nf_test_version}.tar.gz"
+    curl --fail --location --silent --show-error \
+        "https://github.com/askimed/nf-test/releases/download/v${nf_test_version}/nf-test-${nf_test_version}.tar.gz" \
+        --output "${archive}"
+    tar -xzf "${archive}" -C "${tool_cache}"
+fi
+
+export NXF_VER="${nextflow_version}"
+export NXF_HOME="${tool_cache}/nextflow-home"
+export PATH="${tool_cache}:${PATH}"
+export NXF_OPTS="${NXF_OPTS:--XX:ActiveProcessorCount=1 -XX:ParallelGCThreads=1 -XX:ConcGCThreads=1}"
+
+"${nextflow_bin}" lint main.nf subworkflows/local/validate_samplesheet.nf
+"${nf_test_bin}" version | grep -F "nf-test ${nf_test_version}" >/dev/null
+"${nf_test_bin}" test
