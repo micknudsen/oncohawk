@@ -31,10 +31,10 @@ open.
 ## Input boundary
 
 The target contract accepts tumor-only whole-genome sequencing input as
-standard gzip-compressed, paired-end FASTQ files (`.fastq.gz`). Each input
-record must provide separate, non-interleaved R1 and R2 files. SPRING-compressed
-FASTQ is outside the current target contract and may be considered in a later
-increment.
+standard gzip-compressed, paired-end FASTQ files (`.fastq.gz` or `.fq.gz`). Each
+input record must provide separate, non-interleaved R1 and R2 files.
+SPRING-compressed FASTQ is outside the current target contract and may be
+considered in a later increment.
 
 One analysis represents one tumor sample. A single run may include multiple
 independent samples from multiple patients. Multiple library, flowcell, and
@@ -71,8 +71,12 @@ vocabulary beyond the default is not decided here; a supplied value must be
 non-empty.
 
 `filepath` is required and contains exactly two semicolon-separated paths: R1
-then R2. Both paths must name non-interleaved `.fastq.gz` files. Relative paths
-are resolved from the directory containing the sample sheet.
+then R2. Both paths must name non-interleaved `.fastq.gz` or `.fq.gz` files. The
+first filename must contain a delimited `R1` mate token and the second a
+delimited `R2` mate token; delimiters are the start or end of the filename, an
+underscore, a period, or a hyphen. Common Illumina names such as
+`sample_R1_001.fastq.gz` and `sample_R2_001.fastq.gz` are accepted. Relative
+paths are resolved from the directory containing the sample sheet.
 
 The tuple (`sample_id`, `library_id`, `flowcell_id`, `lane`) must be unique.
 The sample sheet does not contain a read-group identifier. A future pipeline
@@ -101,7 +105,8 @@ Examples of structural failures include a repeated
 (`sample_id`, `library_id`, `flowcell_id`, `lane`) tuple; one `sample_id`
 mapped to different patients; a missing `library_id`, `flowcell_id`, or `lane`;
 an unrecognized `info` key; a non-`fastq` filetype; or a `filepath` value that
-does not contain exactly two `.fastq.gz` paths in R1/R2 order.
+does not contain exactly two `.fastq.gz` or `.fq.gz` paths with delimited R1/R2
+mate tokens in R1/R2 order.
 
 The contract does not require a separate, full-file preflight scan to establish
 read-name or pair consistency before processing begins. It does require that
