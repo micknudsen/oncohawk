@@ -2,9 +2,10 @@
 
 ## Scope of this document
 
-This draft defines OncoHawk's intended use, input and reference boundary,
-variant-class boundary, reporting boundary, and initial runtime and engineering-
-verification boundary. It is a target contract and does not describe
+This draft defines OncoHawk's intended use, workflow-role and bundle boundary,
+input and reference boundary, variant-class boundary, reporting boundary, and
+initial runtime and engineering-verification boundary. It is a target contract
+and does not describe
 implemented or verified analytical behavior.
 
 OncoHawk currently has no analytical implementation, analytical or scientific
@@ -28,9 +29,36 @@ These resources will inform prioritization for report inclusion. Their exact
 contents, evidence requirements, representation, and inclusion logic remain
 open.
 
-## Input boundary
+## Workflow architecture
 
-The target contract accepts tumor-only whole-genome sequencing input as
+The target architecture has three conceptual workflow roles. These names do
+not define current command-line modes or executable workflow entry points, and
+they do not describe implemented preparation or analysis behavior.
+
+`prepare_reference_bundle` consumes pinned reference-genome and annotation
+assets. It produces a versioned reference bundle containing the derived
+reference and the indexes required by later-approved analysis components. The
+exact annotation assets and releases, index contents, identity scheme, and
+directory layout remain open.
+
+`prepare_knowledge_bundle` consumes an approved, human-readable,
+clinician-oriented knowledge specification and a reference bundle. It uses
+reference-bundle annotation assets, for example a GENCODE GTF, to produce a
+versioned, machine-consumable knowledge bundle. The knowledge bundle is bound
+to the reference bundle from which it is prepared. The authoring format and
+translation and compatibility semantics remain open.
+
+Only `analyze` consumes a sample sheet. It requires both a reference bundle and
+a knowledge bundle as inputs and must record enough bundle identity and
+provenance with its analysis output set to trace those inputs. The
+representation and placement of that record remain open.
+
+The human-readable knowledge specification, compiled knowledge bundle, and
+final clinician-readable report are distinct artifacts.
+
+## Analyze input boundary
+
+The `analyze` role accepts tumor-only whole-genome sequencing input as
 standard gzip-compressed, paired-end FASTQ files (`.fastq.gz` or `.fq.gz`). Each
 input record must provide separate, non-interleaved R1 and R2 files.
 SPRING-compressed FASTQ is outside the current target contract and may be
@@ -42,8 +70,8 @@ lane records may refer to one sample.
 
 ### Sample-sheet contract
 
-The future sample sheet is a headered CSV file with these exact columns in this
-order:
+The future `analyze` sample sheet is a headered CSV file with these exact
+columns in this order:
 
 ```csv
 patient_id,sample_id,filetype,info,filepath
@@ -137,33 +165,40 @@ masking preserves the source GRCh38 coordinate system. The downloaded source
 artifacts must be verified against the pinned checksums, and the checksum of
 the derived masked reference must be recorded for each reference build.
 
+The future `prepare_reference_bundle` role will establish this derived masked
+reference from those pinned source artifacts. It will also contain pinned
+annotation assets, including those used by `prepare_knowledge_bundle`; their
+selection and release remain open. Required indexes will be defined when their
+dependent analysis components are approved.
+
 ## Variant and MVP reporting boundary
 
 The target contract requires genome-wide calling of single-nucleotide variants
 (SNVs), insertions and deletions (indels), and structural variants (SVs).
 Genome-wide call sets must be retained so that a sample can be re-analysed
-against updated approved resources without repeating variant calling. The exact
-formats and retention requirements for these call sets remain open.
+against an updated knowledge bundle without repeating variant calling. The
+exact formats and retention requirements for these call sets remain open.
 
 The MVP report contains two finding categories: **Variants** and
 **Translocations**. These are biological reporting categories, not partitions
 based on variant size or a caller's representation. Report inclusion is limited
-to findings matched by approved predefined resources.
+to findings matched by rules represented in the input knowledge bundle.
 
 **Variants** contains findings that annotation predicts will affect one gene
-and that match an approved AML/MDS gene or hotspot resource. This category may
-include SNVs, indels, and single-gene events represented by an SV caller. For
-example, an `FLT3` internal tandem duplication or a `KMT2A` partial tandem
-duplication belongs in **Variants**, irrespective of its underlying caller
-representation. The exact annotation consequences, transcript policy,
-resources, and inclusion rules remain open.
+and that match an AML/MDS gene or hotspot rule represented in the input
+knowledge bundle. This category may include SNVs, indels, and single-gene
+events represented by an SV caller. For example, an `FLT3` internal tandem
+duplication or a `KMT2A` partial tandem duplication belongs in **Variants**,
+irrespective of its underlying caller representation. The exact annotation
+consequences, transcript policy, resources, and inclusion rules remain open.
 
 **Translocations** contains events predicted to join gene partners that match
-an approved predefined recurrent-fusion resource. Inclusion is independent of
-whether the underlying event is represented as a BND, deletion, duplication,
-inversion, or another suitable SV representation. Genome-wide SV calls are
-retained, but novel or otherwise potentially interesting fusions outside the
-predefined resource are not included in the MVP report.
+a recurrent-fusion rule represented in the input knowledge bundle. Inclusion
+is independent of whether the underlying event is represented as a BND,
+deletion, duplication, inversion, or another suitable SV representation.
+Genome-wide SV calls are retained, but novel or otherwise potentially
+interesting fusions outside the input knowledge bundle are not included in the
+MVP report.
 
 Copy-number alterations (CNAs, also called CNVs) are deferred. Reliable
 tumor-only CNA analysis requires a separately designed read-depth background,
@@ -188,6 +223,10 @@ The report will not provide:
 
 The project does not define or validate downstream clinical review, sign-out,
 or decision-making workflows.
+
+Bundle identity and provenance records required for the analysis output set are
+separate from the clinician-readable report. Their technical representation
+remains open.
 
 ## Runtime and engineering-verification boundary
 
@@ -251,11 +290,19 @@ or suitability for patient-care decisions.
 This document does not yet decide:
 
 - analytical methods, tools, or caller-specific representations;
-- the contents, evidence hierarchy, provenance, release process, or retirement
-  process for curated resources;
-- transcript or annotation requirements;
+- the contents, evidence hierarchy, source provenance, release process, or
+  retirement process for curated resources;
+- annotation assets and releases, or transcript requirements;
+- the knowledge-specification authoring format;
+- translation semantics for transcript exon rules, including genome build,
+  annotation release, transcript accession/version, exon semantics, and strand;
+- fusion-rule translation to BEDPE or another representation;
+- bundle identity/versioning, provenance manifests, checksums beyond the
+  existing source and masked-reference requirements, directory layout,
+  reference-to-knowledge compatibility rules, or exact tool/index contents;
 - reporting thresholds, prioritization rules, or the report schema;
-- technical, audit, or downstream machine-readable outputs;
+- technical, audit, or downstream machine-readable outputs other than the
+  required recording of input-bundle identity and provenance;
 - Slurm profiles, resource policies, and site-specific execution configuration;
 - production Apptainer image, provenance, cache, and launch requirements;
 - cloud and managed-execution support;
