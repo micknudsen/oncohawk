@@ -41,7 +41,7 @@ Stop and request a revised proposal if approved work grows materially, requires
 a new scientific or architectural decision, encounters missing tooling, or
 suggests a custom workaround.
 
-## Three gates
+## Four gates
 
 ### 1. Proposal gate
 
@@ -64,17 +64,36 @@ present one issue-sized proposal containing:
 Do not modify files, Git state, dependencies, generated resources, or external
 services at this gate.
 
-### 2. Implementation gate
+### 2. Q&A agreement gate
 
-After unmistakable approval of the named proposal, make only the approved local
-changes and perform only the approved verification. Preserve unrelated user
-work. Do not install dependencies, download data, run state-producing workflows,
-or add substitutes and workarounds unless they are explicitly in scope.
+After the owner accepts an issue-sized proposal for Q&A, ask all material
+questions needed to define it correctly. Q&A occurs in the conversation, not in
+the GitHub issue. Recap the agreed scope, decisions, and any unresolved
+matters, then wait for the owner to explicitly agree that the details are
+settled.
+
+For a fully specified proposal, the owner may explicitly confirm that no
+further questions are needed. Codex must still recap the settled scope before
+creating an issue.
+
+If Q&A materially changes the goal, files, external state, decisions, risks,
+dependencies, or verification, stop and present a revised proposal for
+acceptance. Do not create an issue, modify files, change Git state, install or
+download dependencies, generate resources, run state-producing workflows, or
+use external services at this gate.
+
+### 3. Implementation gate
+
+After unmistakable acceptance of the named, settled issue, make only the
+approved local changes and perform only the approved verification. Preserve
+unrelated user work. Do not install dependencies, download data, run
+state-producing workflows, or add substitutes and workarounds unless they are
+explicitly in scope.
 
 Local implementation permission does not authorize a branch, commit, issue,
 push, pull request, release, settings change, or merge.
 
-### 3. Publication gate
+### 4. Publication gate
 
 Publication actions require explicit authorization for their stated scope.
 `master` is the intended protected default branch; do not infer that protection
@@ -128,28 +147,34 @@ publishing the next increment. Codex sandbox, Auto-review, managed policy, and
 command-rule enforcement remain independent controls and may still deny an
 action.
 
-### Staged proposal-to-PR authorization
+### Staged Q&A-to-PR authorization
 
 After a next issue-sized increment has been proposed, the owner may advance it
-through these three explicit stages. Completion of one stage does not imply
+through these four explicit stages. Completion of one stage does not imply
 acceptance of the next.
 
-1. **Accept proposal.** When the owner unambiguously accepts the latest
-   proposal, create exactly one GitHub issue containing it. Do not create a
-   branch, modify files, install or download dependencies, generate resources,
-   run state-producing workflows, commit, push, or open a pull request.
-2. **Accept issue.** When the owner subsequently and unambiguously accepts that
-   issue, create and switch to one short-lived branch, perform only its local
-   implementation, and run only its approved verification. Ask all material
-   questions needed to complete the issue before implementing behavior affected
-   by an unresolved answer; independent work whose requirements are settled may
-   continue. This stage authorizes only dependencies, downloads, generated
-   resources, and state-producing workflows explicitly listed in the accepted
-   issue. If answers or discoveries materially change the goal, files, external
-   state, decisions, risks, dependencies, or verification, stop and present a
-   revised proposal for acceptance. When local work and verification are
-   complete, report that the issue appears ready; do not commit or publish.
-3. **Make PR.** When the owner says `make PR` for that completed issue, stage
+1. **Accept proposal for Q&A.** When the owner unambiguously accepts the latest
+   proposal for Q&A, ask and answer its material questions in the conversation.
+   Do not create an issue or branch, modify files, install or download
+   dependencies, generate resources, run state-producing workflows, commit,
+   push, or open a pull request.
+2. **Agree details.** After Codex recaps the Q&A outcome, the owner explicitly
+   agrees that the details are settled, or explicitly confirms that no further
+   questions are needed for a fully specified proposal. Create exactly one
+   GitHub issue containing only that settled scope. Do not create a branch,
+   modify files, install or download dependencies, generate resources, run
+   state-producing workflows, commit, push, or open a pull request.
+3. **Accept issue.** When the owner subsequently and unambiguously accepts that
+   settled issue, create and switch to one short-lived branch, perform only its
+   local implementation, and run only its approved verification. This stage
+   authorizes only dependencies, downloads, generated resources, and
+   state-producing workflows explicitly listed in the accepted issue. If a
+   material question or discovery changes the goal, files, external state,
+   decisions, risks, dependencies, or verification, return to the Q&A agreement
+   gate and, when required, present a revised proposal for acceptance. When
+   local work and verification are complete, report that the issue appears
+   ready; do not commit or publish.
+4. **Make PR.** When the owner says `make PR` for that completed issue, stage
    only its intended files, create one focused commit, push its short-lived
    branch, open one ready-for-review pull request targeting `master`, link the
    pull request so merging it closes the primary issue, and confirm required CI
