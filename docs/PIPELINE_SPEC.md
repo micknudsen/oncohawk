@@ -36,22 +36,26 @@ not define current command-line modes or executable workflow entry points, and
 they do not describe implemented preparation or analysis behavior.
 
 `prepare_reference_bundle` consumes pinned reference-genome and annotation
-assets. It produces a versioned reference bundle containing the derived
-reference and the indexes required by later-approved analysis components. The
-exact annotation assets and releases, index contents, identity scheme, and
-directory layout remain open.
+assets. It produces a versioned reference bundle with an identity, containing
+the derived reference and the indexes required by later-approved analysis
+components. The exact annotation assets and releases, index contents, identity
+representation, and directory layout remain open.
 
 `prepare_knowledge_bundle` consumes an approved, human-readable,
 clinician-oriented knowledge specification and a reference bundle. It uses
 reference-bundle annotation assets, for example a GENCODE GTF, to produce a
-versioned, machine-consumable knowledge bundle. The knowledge bundle is bound
-to the reference bundle from which it is prepared. The authoring format and
-translation and compatibility semantics remain open.
+versioned, machine-consumable knowledge bundle. The knowledge bundle must
+declare the identity of the reference bundle from which it is prepared. The
+authoring format, identity-declaration representation, and translation
+semantics remain open.
 
 Only `analyze` consumes a sample sheet. It requires both a reference bundle and
-a knowledge bundle as inputs and must record enough bundle identity and
-provenance with its analysis output set to trace those inputs. The
-representation and placement of that record remain open.
+a knowledge bundle as inputs. It accepts the knowledge bundle only when its
+declared source reference-bundle identity exactly matches the supplied
+reference-bundle identity. A missing or mismatched identity must fail before
+analysis processing begins. Its analysis output set must record the supplied
+reference-bundle identity, knowledge-bundle identity, and their compatibility
+relationship. The representation and placement of that record remain open.
 
 The human-readable knowledge specification, compiled knowledge bundle, and
 final clinician-readable report are distinct artifacts.
@@ -76,7 +80,7 @@ The required inputs for each selected workflow are:
 | --- | --- |
 | `prepare_reference_bundle` | Pinned reference-genome and annotation assets. |
 | `prepare_knowledge_bundle` | An approved human-readable, clinician-oriented knowledge specification and a reference bundle. |
-| `analyze` | A sample sheet, a reference bundle, and a knowledge bundle. |
+| `analyze` | A sample sheet, a reference bundle, and a knowledge bundle whose declared source reference-bundle identity exactly matches the supplied reference bundle. |
 
 The `--workflow` selector and input boundaries are target-contract
 requirements, not implemented behavior. The names and syntax of mode-specific
@@ -251,9 +255,9 @@ The report will not provide:
 The project does not define or validate downstream clinical review, sign-out,
 or decision-making workflows.
 
-Bundle identity and provenance records required for the analysis output set are
-separate from the clinician-readable report. Their technical representation
-remains open.
+Bundle identity, provenance, and compatibility records required for the
+analysis output set are separate from the clinician-readable report. Their
+technical representation remains open.
 
 ## Runtime and engineering-verification boundary
 
@@ -326,12 +330,15 @@ This document does not yet decide:
 - fusion-rule translation to BEDPE or another representation;
 - bundle identity/versioning, provenance manifests, checksums beyond the
   existing source and masked-reference requirements, directory layout,
-  reference-to-knowledge compatibility rules, or exact tool/index contents;
+  or exact tool/index contents;
+- the representation of bundle identities, a knowledge bundle's declared source
+  reference-bundle identity, or the recorded compatibility relationship;
 - the names and syntax of mode-specific input and output parameters beyond
   `--workflow`;
 - reporting thresholds, prioritization rules, or the report schema;
 - technical, audit, or downstream machine-readable outputs other than the
-  required recording of input-bundle identity and provenance;
+  required recording of input-bundle identity, provenance, and compatibility
+  relationship;
 - Slurm profiles, resource policies, and site-specific execution configuration;
 - production Apptainer image, provenance, cache, and launch requirements;
 - cloud and managed-execution support;
