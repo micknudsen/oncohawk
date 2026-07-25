@@ -2,10 +2,10 @@
 
 ## Scope of this document
 
-This draft defines OncoHawk's intended use, workflow-role and bundle boundary,
-input and reference boundary, variant-class boundary, reporting boundary, and
-initial runtime and engineering-verification boundary. It is a target contract
-and does not describe
+This draft defines OncoHawk's intended use, workflow-role, dispatch, and bundle
+boundary, input and reference boundary, variant-class boundary, reporting
+boundary, and initial runtime and engineering-verification boundary. It is a
+target contract and does not describe
 implemented or verified analytical behavior.
 
 OncoHawk currently has no analytical implementation, analytical or scientific
@@ -56,9 +56,36 @@ representation and placement of that record remain open.
 The human-readable knowledge specification, compiled knowledge bundle, and
 final clinician-readable report are distinct artifacts.
 
+## Top-level workflow-dispatch contract
+
+A future top-level entry point must require exactly one `--workflow` value. It
+must be one of:
+
+- `prepare_reference_bundle`;
+- `prepare_knowledge_bundle`; or
+- `analyze`.
+
+There is no default workflow selection. An omitted or unrecognized
+`--workflow` value must cause the entry point to fail before it consumes a
+mode-specific input or starts processing, and the failure must identify the
+accepted values.
+
+The required inputs for each selected workflow are:
+
+| `--workflow` value | Required inputs |
+| --- | --- |
+| `prepare_reference_bundle` | Pinned reference-genome and annotation assets. |
+| `prepare_knowledge_bundle` | An approved human-readable, clinician-oriented knowledge specification and a reference bundle. |
+| `analyze` | A sample sheet, a reference bundle, and a knowledge bundle. |
+
+The `--workflow` selector and input boundaries are target-contract
+requirements, not implemented behavior. The names and syntax of mode-specific
+input and output parameters remain open.
+
 ## Analyze input boundary
 
-The `analyze` role accepts tumor-only whole-genome sequencing input as
+The `analyze` role, selected with `--workflow analyze`, accepts tumor-only
+whole-genome sequencing input as
 standard gzip-compressed, paired-end FASTQ files (`.fastq.gz` or `.fq.gz`). Each
 input record must provide separate, non-interleaved R1 and R2 files.
 SPRING-compressed FASTQ is outside the current target contract and may be
@@ -300,6 +327,8 @@ This document does not yet decide:
 - bundle identity/versioning, provenance manifests, checksums beyond the
   existing source and masked-reference requirements, directory layout,
   reference-to-knowledge compatibility rules, or exact tool/index contents;
+- the names and syntax of mode-specific input and output parameters beyond
+  `--workflow`;
 - reporting thresholds, prioritization rules, or the report schema;
 - technical, audit, or downstream machine-readable outputs other than the
   required recording of input-bundle identity and provenance;
