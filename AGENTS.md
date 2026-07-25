@@ -92,6 +92,10 @@ when the owner explicitly requests one or a concrete known blocker makes the
 change unready for review. When a blocker requires draft status, state the
 blocker clearly.
 
+Pull request titles and bodies must contain only the change summary, rationale,
+impact, verification, and relevant risks. They must not include approval gates,
+later-permission requirements, or workflow instructions.
+
 ### Standing post-merge cleanup authorization
 
 When the owner explicitly states that a pull request has been merged, that
