@@ -1,0 +1,17 @@
+nextflow_pipeline {
+    name 'Run main workflow'
+    script '../main.nf'
+    config './nextflow.config'
+
+    test('accepts a valid synthetic sample sheet') {
+        when {
+            params {
+                input = "${projectDir}/tests/fixtures/valid.csv"
+            }
+        }
+
+        then {
+            assert workflow.success
+        }
+    }
+}
