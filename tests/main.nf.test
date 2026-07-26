@@ -6,12 +6,171 @@ nextflow_pipeline {
     test('accepts a valid synthetic sample sheet') {
         when {
             params {
+                delegate.setProperty('workflow', 'analyze')
+                outdir = 'unused-output-root'
                 input = "${projectDir}/tests/fixtures/valid.csv"
+                reference_bundle = 'reference-bundle'
+                knowledge_bundle = 'knowledge-bundle'
             }
         }
 
         then {
             assert workflow.success
+        }
+    }
+
+    test('rejects an omitted workflow') {
+        when {
+            params {
+                outdir = 'unused-output-root'
+                input = "${projectDir}/tests/fixtures/valid.csv"
+                reference_bundle = 'reference-bundle'
+                knowledge_bundle = 'knowledge-bundle'
+            }
+        }
+
+        then {
+            assert workflow.failed
+            assert workflow.stdout.any { line -> line.contains('Missing or invalid required parameter: --workflow') }
+        }
+    }
+
+    test('rejects an invalid workflow') {
+        when {
+            params {
+                delegate.setProperty('workflow', 'invalid')
+                outdir = 'unused-output-root'
+            }
+        }
+
+        then {
+            assert workflow.failed
+            assert workflow.stdout.any { line -> line.contains('Missing or invalid required parameter: --workflow') }
+        }
+    }
+
+    test('rejects a missing outdir') {
+        when {
+            params {
+                delegate.setProperty('workflow', 'analyze')
+                input = "${projectDir}/tests/fixtures/valid.csv"
+                reference_bundle = 'reference-bundle'
+                knowledge_bundle = 'knowledge-bundle'
+            }
+        }
+
+        then {
+            assert workflow.failed
+            assert workflow.stdout.any { line -> line.contains('Missing required parameter: --outdir') }
+        }
+    }
+
+    test('rejects a missing analyze input') {
+        when {
+            params {
+                delegate.setProperty('workflow', 'analyze')
+                outdir = 'unused-output-root'
+                reference_bundle = 'reference-bundle'
+                knowledge_bundle = 'knowledge-bundle'
+            }
+        }
+
+        then {
+            assert workflow.failed
+            assert workflow.stdout.any { line -> line.contains('Missing required parameter: --input') }
+        }
+    }
+
+    test('rejects a missing analyze reference bundle') {
+        when {
+            params {
+                delegate.setProperty('workflow', 'analyze')
+                outdir = 'unused-output-root'
+                input = "${projectDir}/tests/fixtures/valid.csv"
+                knowledge_bundle = 'knowledge-bundle'
+            }
+        }
+
+        then {
+            assert workflow.failed
+            assert workflow.stdout.any { line -> line.contains('Missing required parameter: --reference_bundle') }
+        }
+    }
+
+    test('rejects a missing analyze knowledge bundle') {
+        when {
+            params {
+                delegate.setProperty('workflow', 'analyze')
+                outdir = 'unused-output-root'
+                input = "${projectDir}/tests/fixtures/valid.csv"
+                reference_bundle = 'reference-bundle'
+            }
+        }
+
+        then {
+            assert workflow.failed
+            assert workflow.stdout.any { line -> line.contains('Missing required parameter: --knowledge_bundle') }
+        }
+    }
+
+    test('rejects a cross-workflow parameter') {
+        when {
+            params {
+                delegate.setProperty('workflow', 'analyze')
+                outdir = 'unused-output-root'
+                input = "${projectDir}/tests/fixtures/valid.csv"
+                reference_bundle = 'reference-bundle'
+                knowledge_bundle = 'knowledge-bundle'
+                reference_spec = 'custom-reference-spec'
+            }
+        }
+
+        then {
+            assert workflow.failed
+            assert workflow.stdout.any { line -> line.contains('Parameter --reference_spec is not valid for --workflow analyze') }
+        }
+    }
+
+    test('reports that reference preparation is unavailable') {
+        when {
+            params {
+                delegate.setProperty('workflow', 'prepare_reference_bundle')
+                outdir = 'unused-output-root'
+            }
+        }
+
+        then {
+            assert workflow.failed
+            assert workflow.stdout.any { line -> line.contains("Workflow 'prepare_reference_bundle' is not implemented") }
+        }
+    }
+
+    test('reports that knowledge preparation is unavailable') {
+        when {
+            params {
+                delegate.setProperty('workflow', 'prepare_knowledge_bundle')
+                outdir = 'unused-output-root'
+                reference_bundle = 'reference-bundle'
+            }
+        }
+
+        then {
+            assert workflow.failed
+            assert workflow.stdout.any { line -> line.contains("Workflow 'prepare_knowledge_bundle' is not implemented") }
+        }
+    }
+
+    test('rejects a missing knowledge-preparation reference bundle') {
+        when {
+            params {
+                delegate.setProperty('workflow', 'prepare_knowledge_bundle')
+                outdir = 'unused-output-root'
+            }
+        }
+
+        then {
+            assert workflow.failed
+            assert workflow.stdout.any { line -> line.contains('Missing required parameter: --reference_bundle') }
         }
     }
 }
