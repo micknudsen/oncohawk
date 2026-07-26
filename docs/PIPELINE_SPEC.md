@@ -38,12 +38,14 @@ they do not describe implemented preparation or analysis behavior.
 `prepare_reference_bundle` consumes pinned reference-genome and annotation
 assets. It produces a versioned reference bundle with an identity, containing
 the derived reference and the indexes required by later-approved analysis
-components. The exact annotation assets and releases, index contents, identity
-representation, and directory layout remain open.
+components. The bundle root contains a machine-readable `manifest.json`. Its
+`bundle_id` is an opaque, producer-assigned string. Consumers compare bundle
+identities by exact string equality. The exact annotation assets and releases,
+index contents, bundle-identifier syntax, and directory layout remain open.
 
 The reference bundle must expose its identity and provenance for its source
 genome, exclusions BED, annotation assets, masking transformation, and derived
-masked-reference checksum.
+masked-reference checksum through its manifest.
 
 `prepare_knowledge_bundle` consumes an approved, human-readable,
 clinician-oriented knowledge specification and a reference bundle. It uses
@@ -53,8 +55,12 @@ declare the identity of the reference bundle from which it is prepared. The
 knowledge bundle must also expose its own identity and the identity of its
 approved human-readable knowledge specification. It does not duplicate the
 individual curated-resource provenance of that specification. The authoring
-format, identity-declaration representation, and translation semantics remain
-open.
+format and translation semantics remain open.
+
+The knowledge-bundle root contains a machine-readable `manifest.json` with its
+opaque, producer-assigned `bundle_id` and a `source_reference_bundle_id`. The
+latter is the `bundle_id` of the reference bundle used to prepare the knowledge
+bundle.
 
 Only `analyze` consumes a sample sheet. It requires both a reference bundle and
 a knowledge bundle as inputs. It accepts the knowledge bundle only when its
@@ -63,8 +69,10 @@ reference-bundle identity. A missing or mismatched identity must fail before
 analysis processing begins. Its analysis output set must record the supplied
 reference-bundle identity, knowledge-bundle identity, and their compatibility
 relationship. Full lineage is resolved through the bundles rather than
-duplicated in the analysis output set. The representation and placement of that
-record remain open.
+duplicated in the analysis output set. The record is a separate
+`bundle-compatibility.json` containing `reference_bundle_id`,
+`knowledge_bundle_id`, and `knowledge_source_reference_bundle_id` string
+fields.
 
 The human-readable knowledge specification, compiled knowledge bundle, and
 final clinician-readable report are distinct artifacts.
@@ -265,8 +273,7 @@ The project does not define or validate downstream clinical review, sign-out,
 or decision-making workflows.
 
 Bundle identity, provenance, and compatibility records required for the
-analysis output set are separate from the clinician-readable report. Their
-technical representation remains open.
+analysis output set are separate from the clinician-readable report.
 
 ## Runtime and engineering-verification boundary
 
@@ -337,12 +344,9 @@ This document does not yet decide:
 - translation semantics for transcript exon rules, including genome build,
   annotation release, transcript accession/version, exon semantics, and strand;
 - fusion-rule translation to BEDPE or another representation;
-- bundle identifier and versioning schemes, provenance-manifest representation,
-  checksums beyond the existing source and masked-reference requirements,
-  directory layout, or exact tool/index contents;
-- the representation of bundle identities, declared source knowledge-
-  specification and reference-bundle identities, or the recorded compatibility
-  relationship;
+- bundle identifier and versioning schemes, manifest fields beyond the
+  required identities, checksums beyond the existing source and masked-
+  reference requirements, directory layout, or exact tool/index contents;
 - the names and syntax of mode-specific input and output parameters beyond
   `--workflow`;
 - reporting thresholds, prioritization rules, or the report schema;
