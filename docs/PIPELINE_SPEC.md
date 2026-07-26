@@ -35,19 +35,20 @@ The target architecture has three conceptual workflow roles. These names do
 not define current command-line modes or executable workflow entry points, and
 they do not describe implemented preparation or analysis behavior.
 
-`prepare_reference_bundle` consumes pinned reference-genome and annotation
-assets. It produces a versioned reference bundle with an identity, containing
-the derived reference and the indexes required by later-approved analysis
-components. The bundle root contains a machine-readable `manifest.json`. Its
-`bundle_id` is an opaque, producer-assigned string. Consumers compare bundle
-identities by exact string equality. The exact annotation assets and releases,
-index contents, bundle-identifier syntax, and directory layout remain open.
+`prepare_reference_bundle` selects a versioned bundle specification and uses
+its pinned reference-genome and annotation assets to produce a versioned
+reference bundle with an identity. The bundle contains the derived reference
+and the indexes required by later-approved analysis components. The bundle root
+contains a machine-readable `manifest.json`. Its `bundle_id` is an opaque,
+producer-assigned string. Consumers compare bundle identities by exact string
+equality. The exact annotation assets and releases, index contents,
+bundle-identifier syntax, and directory layout remain open.
 
 The reference bundle must expose its identity and provenance for its source
 genome, exclusions BED, annotation assets, masking transformation, and derived
 masked-reference checksum through its manifest.
 
-`prepare_knowledge_bundle` consumes an approved, human-readable,
+`prepare_knowledge_bundle` selects a human-readable,
 clinician-oriented knowledge specification and a reference bundle. It uses
 reference-bundle annotation assets, for example a GENCODE GTF, to produce a
 versioned, machine-consumable knowledge bundle. The knowledge bundle must
@@ -91,17 +92,49 @@ There is no default workflow selection. An omitted or unrecognized
 mode-specific input or starts processing, and the failure must identify the
 accepted values.
 
-The required inputs for each selected workflow are:
+Every workflow requires `--outdir`, which identifies the root directory for
+that workflow's output set. The required and optional mode-specific parameters
+are:
 
-| `--workflow` value | Required inputs |
-| --- | --- |
-| `prepare_reference_bundle` | Pinned reference-genome and annotation assets. |
-| `prepare_knowledge_bundle` | An approved human-readable, clinician-oriented knowledge specification and a reference bundle. |
-| `analyze` | A sample sheet, a reference bundle, and a knowledge bundle whose declared source reference-bundle identity exactly matches the supplied reference bundle. |
+| `--workflow` value | Required parameters | Optional parameters |
+| --- | --- | --- |
+| `prepare_reference_bundle` | `--outdir` | `--reference_spec` |
+| `prepare_knowledge_bundle` | `--outdir`, `--reference_bundle` | `--knowledge_spec` |
+| `analyze` | `--outdir`, `--input`, `--reference_bundle`, `--knowledge_bundle` | None |
 
-The `--workflow` selector and input boundaries are target-contract
-requirements, not implemented behavior. The names and syntax of mode-specific
-input and output parameters remain open.
+For `prepare_reference_bundle`, `--reference_spec` is a path to a local custom
+reference-bundle specification. When it is omitted, the workflow uses the
+default reference-bundle specification versioned with the selected OncoHawk
+release. The selected specification identifies the pinned source assets and
+their validation requirements; the workflow downloads those assets. Source
+locations and download mechanics remain open.
+
+For `prepare_knowledge_bundle`, `--knowledge_spec` is a path to a local custom
+human-readable knowledge specification. When it is omitted, the workflow uses
+the default knowledge specification versioned with the selected OncoHawk
+release. `--reference_bundle` identifies the reference bundle against which
+the selected knowledge specification is prepared.
+
+For `analyze`, `--input` identifies the sample sheet, and
+`--reference_bundle` and `--knowledge_bundle` identify the input bundles. The
+knowledge bundle must declare the exact identity of the supplied reference
+bundle as its source reference bundle.
+
+Default and custom specifications must both produce bundles that conform to
+the versioned OncoHawk bundle contract. Their resulting manifests must record
+the provenance required for their respective bundle type.
+
+A selected workflow accepts only the parameters listed for it, in addition to
+`--workflow`. Supplying a parameter intended for another workflow is an error
+that must be reported before processing begins. This includes supplying
+`--reference_spec` to `prepare_knowledge_bundle` or `analyze`,
+`--knowledge_spec` to `prepare_reference_bundle` or `analyze`, or any
+bundle-preparation parameter to `analyze` other than its required input-bundle
+parameters.
+
+The `--workflow` selector and these parameter boundaries are target-contract
+requirements, not implemented behavior. Output-set layout and existing-output
+directory behavior remain open.
 
 ## Analyze input boundary
 
@@ -347,8 +380,9 @@ This document does not yet decide:
 - bundle identifier and versioning schemes, manifest fields beyond the
   required identities, checksums beyond the existing source and masked-
   reference requirements, directory layout, or exact tool/index contents;
-- the names and syntax of mode-specific input and output parameters beyond
-  `--workflow`;
+- source locations and download mechanics for default bundle specifications;
+- the layout of a workflow output set, including existing-output-directory
+  behavior;
 - reporting thresholds, prioritization rules, or the report schema;
 - technical, audit, or downstream machine-readable outputs other than the
   required recording of input-bundle identity, provenance, and compatibility
