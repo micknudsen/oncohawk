@@ -41,13 +41,20 @@ the derived reference and the indexes required by later-approved analysis
 components. The exact annotation assets and releases, index contents, identity
 representation, and directory layout remain open.
 
+The reference bundle must expose its identity and provenance for its source
+genome, exclusions BED, annotation assets, masking transformation, and derived
+masked-reference checksum.
+
 `prepare_knowledge_bundle` consumes an approved, human-readable,
 clinician-oriented knowledge specification and a reference bundle. It uses
 reference-bundle annotation assets, for example a GENCODE GTF, to produce a
 versioned, machine-consumable knowledge bundle. The knowledge bundle must
 declare the identity of the reference bundle from which it is prepared. The
-authoring format, identity-declaration representation, and translation
-semantics remain open.
+knowledge bundle must also expose its own identity and the identity of its
+approved human-readable knowledge specification. It does not duplicate the
+individual curated-resource provenance of that specification. The authoring
+format, identity-declaration representation, and translation semantics remain
+open.
 
 Only `analyze` consumes a sample sheet. It requires both a reference bundle and
 a knowledge bundle as inputs. It accepts the knowledge bundle only when its
@@ -55,7 +62,9 @@ declared source reference-bundle identity exactly matches the supplied
 reference-bundle identity. A missing or mismatched identity must fail before
 analysis processing begins. Its analysis output set must record the supplied
 reference-bundle identity, knowledge-bundle identity, and their compatibility
-relationship. The representation and placement of that record remain open.
+relationship. Full lineage is resolved through the bundles rather than
+duplicated in the analysis output set. The representation and placement of that
+record remain open.
 
 The human-readable knowledge specification, compiled knowledge bundle, and
 final clinician-readable report are distinct artifacts.
@@ -328,11 +337,12 @@ This document does not yet decide:
 - translation semantics for transcript exon rules, including genome build,
   annotation release, transcript accession/version, exon semantics, and strand;
 - fusion-rule translation to BEDPE or another representation;
-- bundle identity/versioning, provenance manifests, checksums beyond the
-  existing source and masked-reference requirements, directory layout,
-  or exact tool/index contents;
-- the representation of bundle identities, a knowledge bundle's declared source
-  reference-bundle identity, or the recorded compatibility relationship;
+- bundle identifier and versioning schemes, provenance-manifest representation,
+  checksums beyond the existing source and masked-reference requirements,
+  directory layout, or exact tool/index contents;
+- the representation of bundle identities, declared source knowledge-
+  specification and reference-bundle identities, or the recorded compatibility
+  relationship;
 - the names and syntax of mode-specific input and output parameters beyond
   `--workflow`;
 - reporting thresholds, prioritization rules, or the report schema;
