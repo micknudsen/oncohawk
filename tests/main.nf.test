@@ -4,10 +4,13 @@ nextflow_pipeline {
     config './nextflow.config'
 
     test('accepts a valid synthetic sample sheet') {
+        def outputRoot = "${projectDir}/.nf-test/compatibility-record"
+
         when {
+            new File(outputRoot).deleteDir()
             params {
                 delegate.setProperty('workflow', 'analyze')
-                outdir = 'unused-output-root'
+                outdir = outputRoot
                 input = "${projectDir}/tests/fixtures/valid.csv"
                 reference_bundle = "${projectDir}/tests/fixtures/bundles/reference-matching"
                 knowledge_bundle = "${projectDir}/tests/fixtures/bundles/knowledge-matching"
@@ -16,6 +19,38 @@ nextflow_pipeline {
 
         then {
             assert workflow.success
+            def record = new File(outputRoot, 'bundle-compatibility.json')
+            assert record.isFile()
+            assert new groovy.json.JsonSlurper().parse(record) == [
+                reference_bundle_id: 'reference-test-001',
+                knowledge_bundle_id: 'knowledge-test-001',
+                knowledge_source_reference_bundle_id: 'reference-test-001'
+            ]
+        }
+    }
+
+    test('replaces an existing compatibility record') {
+        def outputRoot = new File("${projectDir}/.nf-test/replaced-compatibility-record")
+
+        when {
+            outputRoot.mkdirs()
+            new File(outputRoot, 'bundle-compatibility.json').text = '{"stale":true}\n'
+            params {
+                delegate.setProperty('workflow', 'analyze')
+                outdir = outputRoot.toString()
+                input = "${projectDir}/tests/fixtures/valid.csv"
+                reference_bundle = "${projectDir}/tests/fixtures/bundles/reference-matching"
+                knowledge_bundle = "${projectDir}/tests/fixtures/bundles/knowledge-matching"
+            }
+        }
+
+        then {
+            assert workflow.success
+            assert new groovy.json.JsonSlurper().parse(new File(outputRoot, 'bundle-compatibility.json')) == [
+                reference_bundle_id: 'reference-test-001',
+                knowledge_bundle_id: 'knowledge-test-001',
+                knowledge_source_reference_bundle_id: 'reference-test-001'
+            ]
         }
     }
 
@@ -132,10 +167,13 @@ nextflow_pipeline {
     }
 
     test('rejects a missing reference bundle directory before sample-sheet validation') {
+        def outputRoot = new File("${projectDir}/.nf-test/invalid-bundle-output")
+
         when {
+            outputRoot.deleteDir()
             params {
                 delegate.setProperty('workflow', 'analyze')
-                outdir = 'unused-output-root'
+                outdir = outputRoot.toString()
                 input = "${projectDir}/tests/fixtures/invalid_header.csv"
                 reference_bundle = "${projectDir}/tests/fixtures/bundles/missing-reference"
                 knowledge_bundle = "${projectDir}/tests/fixtures/bundles/knowledge-matching"
@@ -145,6 +183,7 @@ nextflow_pipeline {
         then {
             assert workflow.failed
             assert workflow.stdout.any { line -> line.contains('Invalid --reference_bundle: expected a local bundle-root directory') }
+            assert !new File(outputRoot, 'bundle-compatibility.json').exists()
         }
     }
 
@@ -234,10 +273,13 @@ nextflow_pipeline {
     }
 
     test('rejects incompatible knowledge and reference bundles before sample-sheet validation') {
+        def outputRoot = new File("${projectDir}/.nf-test/incompatible-bundle-output")
+
         when {
+            outputRoot.deleteDir()
             params {
                 delegate.setProperty('workflow', 'analyze')
-                outdir = 'unused-output-root'
+                outdir = outputRoot.toString()
                 input = "${projectDir}/tests/fixtures/invalid_header.csv"
                 reference_bundle = "${projectDir}/tests/fixtures/bundles/reference-matching"
                 knowledge_bundle = "${projectDir}/tests/fixtures/bundles/knowledge-mismatched"
@@ -247,6 +289,7 @@ nextflow_pipeline {
         then {
             assert workflow.failed
             assert workflow.stdout.any { line -> line.contains('Invalid bundle compatibility: knowledge manifest source_reference_bundle_id does not match reference manifest bundle_id') }
+            assert !new File(outputRoot, 'bundle-compatibility.json').exists()
         }
     }
 
