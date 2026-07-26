@@ -101,6 +101,15 @@ is configured without verification. Every change must reach `master` through
 one primary issue, one short-lived branch, and one focused pull request. Required
 CI checks must pass before merge. Never merge without explicit permission.
 
+### Sandbox-local GitHub CLI authentication fallback
+
+If `gh auth status` fails only in Codex's sandbox during an authorized
+publication action, record the discrepancy and proceed without asking the owner
+to re-check or re-authenticate SSH Git. Attempt the authorized SSH `git push`,
+then use the authenticated GitHub connector for the pull-request action. A
+failed SSH push or GitHub connector action remains a blocker; report its
+evidence rather than treating the sandbox-local `gh` failure as conclusive.
+
 Creating an issue, creating or switching a branch, committing, pushing, opening
 or editing a pull request, changing repository settings, releasing, and merging
 remain separate permission boundaries unless the owner explicitly authorizes a
