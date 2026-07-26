@@ -34,10 +34,51 @@ def validateWorkflowParameters() {
     selectedWorkflow
 }
 
+def readBundleManifest(String parameter, Object bundleRoot) {
+    def root = new File(bundleRoot.toString())
+    if( !root.isDirectory() ) {
+        error "Invalid --${parameter}: expected a local bundle-root directory"
+    }
+
+    def manifestFile = new File(root, 'manifest.json')
+    if( !manifestFile.isFile() ) {
+        error "Invalid --${parameter}: missing manifest.json"
+    }
+
+    try {
+        new groovy.json.JsonSlurper().parse(manifestFile)
+    }
+    catch( Exception _ignored ) {
+        error "Invalid --${parameter}: malformed manifest.json"
+    }
+}
+
+def requireManifestIdentity(String parameter, Object manifest, String field) {
+    def value = manifest instanceof Map ? manifest[field] : null
+    if( !(value instanceof String) || value.trim().isEmpty() ) {
+        error "Invalid --${parameter}: manifest.json requires a non-empty string ${field}"
+    }
+
+    value
+}
+
+def validateAnalyzeBundleCompatibility() {
+    def referenceManifest = readBundleManifest('reference_bundle', params.reference_bundle)
+    def knowledgeManifest = readBundleManifest('knowledge_bundle', params.knowledge_bundle)
+    def referenceBundleId = requireManifestIdentity('reference_bundle', referenceManifest, 'bundle_id')
+    def knowledgeSourceReferenceBundleId = requireManifestIdentity('knowledge_bundle', knowledgeManifest, 'source_reference_bundle_id')
+    requireManifestIdentity('knowledge_bundle', knowledgeManifest, 'bundle_id')
+
+    if( knowledgeSourceReferenceBundleId != referenceBundleId ) {
+        error 'Invalid bundle compatibility: knowledge manifest source_reference_bundle_id does not match reference manifest bundle_id'
+    }
+}
+
 workflow {
     selectedWorkflow = validateWorkflowParameters()
 
     if( selectedWorkflow == 'analyze' ) {
+        validateAnalyzeBundleCompatibility()
         VALIDATE_SAMPLESHEET(params.input)
     }
     else {
