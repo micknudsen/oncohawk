@@ -72,13 +72,33 @@ def validateAnalyzeBundleCompatibility() {
     if( knowledgeSourceReferenceBundleId != referenceBundleId ) {
         error 'Invalid bundle compatibility: knowledge manifest source_reference_bundle_id does not match reference manifest bundle_id'
     }
+
+    [
+        reference_bundle_id: referenceBundleId,
+        knowledge_bundle_id: requireManifestIdentity('knowledge_bundle', knowledgeManifest, 'bundle_id'),
+        knowledge_source_reference_bundle_id: knowledgeSourceReferenceBundleId
+    ]
+}
+
+def writeBundleCompatibilityRecord(Map compatibility) {
+    def outputDirectory = new File(params.outdir.toString())
+    if( !outputDirectory.exists() && !outputDirectory.mkdirs() ) {
+        error "Unable to create --outdir: ${outputDirectory}"
+    }
+    if( !outputDirectory.isDirectory() ) {
+        error "Invalid --outdir: expected a directory"
+    }
+
+    def compatibilityRecord = new File(outputDirectory, 'bundle-compatibility.json')
+    compatibilityRecord.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(compatibility)) + '\n'
 }
 
 workflow {
     selectedWorkflow = validateWorkflowParameters()
 
     if( selectedWorkflow == 'analyze' ) {
-        validateAnalyzeBundleCompatibility()
+        def compatibility = validateAnalyzeBundleCompatibility()
+        writeBundleCompatibilityRecord(compatibility)
         VALIDATE_SAMPLESHEET(params.input)
     }
     else {
