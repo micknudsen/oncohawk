@@ -29,7 +29,7 @@ def diagnosticsForRow(int rowNumber, List<String> fields) {
 }
 
 def parseInfo(int rowNumber, String value, List<String> diagnostics) {
-    def allowed = ['library_id', 'flowcell_id', 'lane', 'platform'] as Set
+    def allowed = ['library_id', 'flowcell_id', 'lane', 'platform', 'barcode'] as Set
     def required = ['library_id', 'flowcell_id', 'lane']
     def values = [:]
 
@@ -61,7 +61,30 @@ def parseInfo(int rowNumber, String value, List<String> diagnostics) {
     }
 
     values.platform = values.platform ?: 'ILLUMINA'
+    def samPlatforms = ['CAPILLARY', 'DNBSEQ', 'ELEMENT', 'HELICOS', 'ILLUMINA', 'IONTORRENT', 'LS454', 'ONT', 'PACBIO', 'SINGULAR', 'SOLID', 'ULTIMA'] as Set
+    if( !samPlatforms.contains(values.platform) ) {
+        diagnostics << "row ${rowNumber}, info: platform must be one of ${samPlatforms.join(', ')}"
+    }
+    if( values.containsKey('barcode') && !values.barcode.matches('[ACGTRYSWKMBDHVN]+(?:\\+[ACGTRYSWKMBDHVN]+)?') ) {
+        diagnostics << "row ${rowNumber}, info: barcode must be one uppercase IUPAC DNA sequence or dual sequences joined by +"
+    }
     values
+}
+
+def percentEncodeReadGroupComponent(Object value) {
+    value.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8).collect { byteValue ->
+        def codePoint = byteValue & 0xff
+        if( (codePoint >= 0x41 && codePoint <= 0x5a) || (codePoint >= 0x61 && codePoint <= 0x7a) || (codePoint >= 0x30 && codePoint <= 0x39) || codePoint == 0x5f || codePoint == 0x2d ) {
+            Character.toString(codePoint as char)
+        }
+        else {
+            String.format('%%%02X', codePoint)
+        }
+    }.join()
+}
+
+def composeReadGroupValue(List<Object> components) {
+    components.collect { component -> percentEncodeReadGroupComponent(component) }.join('.')
 }
 
 def parsePaths(int rowNumber, String value, Path sampleSheetDirectory, List<String> diagnostics) {
@@ -121,9 +144,12 @@ def validateSamplesheet(sampleSheet) {
         def info = parseInfo(rowNumber, fields[3], diagnostics)
         def paths = parsePaths(rowNumber, fields[4], sampleSheet.parent ?: java.nio.file.Path.of('.'), diagnostics)
         if( rowDiagnostics.isEmpty() && info.keySet().containsAll(['library_id', 'flowcell_id', 'lane']) && paths.every { path -> path } ) {
+            def readGroupId = composeReadGroupValue([fields[1], info.library_id, info.flowcell_id, info.lane])
+            def platformUnit = info.containsKey('barcode') ? composeReadGroupValue([info.flowcell_id, info.lane, info.barcode]) : readGroupId
             records << [
                 patient_id: fields[0], sample_id: fields[1], library_id: info.library_id,
                 flowcell_id: info.flowcell_id, lane: info.lane, platform: info.platform,
+                barcode: info.barcode ?: null, read_group_id: readGroupId, platform_unit: platformUnit,
                 r1_path: paths[0], r2_path: paths[1], row: rowNumber
             ]
         }
@@ -131,6 +157,8 @@ def validateSamplesheet(sampleSheet) {
 
     def patientBySample = [:]
     def seenTuples = [] as Set
+    def seenReadGroupIds = [] as Set
+    def seenPlatformUnits = [] as Set
     records.each { record ->
         if( patientBySample.containsKey(record.sample_id) && patientBySample[record.sample_id] != record.patient_id ) {
             diagnostics << "row ${record.row}, sample_id: '${record.sample_id}' maps to more than one patient_id"
@@ -140,6 +168,12 @@ def validateSamplesheet(sampleSheet) {
         def tuple = [record.sample_id, record.library_id, record.flowcell_id, record.lane].join('|')
         if( !seenTuples.add(tuple) ) {
             diagnostics << "row ${record.row}: duplicate (sample_id, library_id, flowcell_id, lane) tuple"
+        }
+        if( !seenReadGroupIds.add(record.read_group_id) ) {
+            diagnostics << "row ${record.row}: duplicate generated read_group_id '${record.read_group_id}'"
+        }
+        if( !seenPlatformUnits.add(record.platform_unit) ) {
+            diagnostics << "row ${record.row}: duplicate generated platform_unit '${record.platform_unit}'"
         }
     }
 

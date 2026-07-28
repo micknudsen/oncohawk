@@ -17,10 +17,50 @@ nextflow_function {
             assert function.result.size() == 3
             assert function.result[0].patient_id == 'patient_001'
             assert function.result[0].platform == 'ILLUMINA'
+            assert function.result[0].barcode == null
+            assert function.result[0].read_group_id == 'sample_001.lib_A.FC123.001'
+            assert function.result[0].platform_unit == function.result[0].read_group_id
             assert function.result[0].r1_path.endsWith('lib_A_FC123_L001_R1_001.fastq.gz')
             assert function.result[0].r2_path.endsWith('lib_A_FC123_L001_R2_001.fastq.gz')
             assert function.result[1].r1_path.endsWith('lib_A_FC123_L002_R1.fq.gz')
             assert function.result[1].r2_path.endsWith('lib_A_FC123_L002_R2.fq.gz')
+        }
+    }
+
+    test('derives a barcode-based platform unit') {
+        when {
+            function {
+                """
+                input[0] = file("${projectDir}/tests/fixtures/valid_barcode.csv")
+                """
+            }
+        }
+
+        then {
+            assert function.success
+            assert function.result == [[
+                patient_id: 'patient_001', sample_id: 'sample_001', library_id: 'lib_A',
+                flowcell_id: 'FC123', lane: '001', platform: 'ILLUMINA', barcode: 'ACGT+TGCA',
+                read_group_id: 'sample_001.lib_A.FC123.001', platform_unit: 'FC123.001.ACGT%2BTGCA',
+                r1_path: "${projectDir}/tests/fixtures/fastq/sample_001/lib_A_FC123_L001_R1.fastq.gz",
+                r2_path: "${projectDir}/tests/fixtures/fastq/sample_001/lib_A_FC123_L001_R2.fastq.gz"
+            ]]
+        }
+    }
+
+    test('percent-encodes read-group components') {
+        when {
+            function {
+                """
+                input[0] = file("${projectDir}/tests/fixtures/valid_encoded_identifiers.csv")
+                """
+            }
+        }
+
+        then {
+            assert function.success
+            assert function.result[0].read_group_id == 'sample%2E001.lib%25A.FC%2E123.00%2E1'
+            assert function.result[0].platform_unit == function.result[0].read_group_id
         }
     }
 
@@ -34,7 +74,11 @@ nextflow_function {
         'invalid_mapping.csv': "sample_id: 'sample_001' maps to more than one patient_id",
         'invalid_tuple.csv': 'duplicate (sample_id, library_id, flowcell_id, lane) tuple',
         'invalid_quoted_field.csv': 'quoted CSV fields are not supported',
-        'invalid_whitespace.csv': 'sample_id: whitespace is not permitted'
+        'invalid_whitespace.csv': 'sample_id: whitespace is not permitted',
+        'invalid_barcode.csv': 'barcode must be one uppercase IUPAC DNA sequence or dual sequences joined by +',
+        'invalid_lowercase_platform.csv': 'platform must be one of',
+        'invalid_platform.csv': 'platform must be one of',
+        'invalid_platform_unit_collision.csv': 'duplicate generated platform_unit'
     ].each { fixture, diagnostic ->
         test("rejects ${fixture}") {
             when {
