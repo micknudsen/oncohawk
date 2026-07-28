@@ -89,8 +89,27 @@ def writeBundleCompatibilityRecord(Map compatibility) {
         error "Invalid --outdir: expected a directory"
     }
 
-    def compatibilityRecord = new File(outputDirectory, 'bundle-compatibility.json')
-    compatibilityRecord.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(compatibility)) + '\n'
+    def metadataDirectory = new File(outputDirectory, 'metadata')
+    if( !metadataDirectory.exists() && !metadataDirectory.mkdirs() ) {
+        error "Unable to create metadata directory: ${metadataDirectory}"
+    }
+    if( !metadataDirectory.isDirectory() ) {
+        error "Invalid metadata path: expected a directory"
+    }
+
+    def compatibilityRecord = new File(metadataDirectory, 'bundle-compatibility.json')
+    def expectedContent = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(compatibility)) + '\n'
+    if( compatibilityRecord.exists() ) {
+        if( !compatibilityRecord.isFile() ) {
+            error "Invalid bundle compatibility record: expected a file"
+        }
+        if( compatibilityRecord.getText('UTF-8') != expectedContent ) {
+            error "Conflicting bundle compatibility record: ${compatibilityRecord}"
+        }
+        return
+    }
+
+    compatibilityRecord.setText(expectedContent, 'UTF-8')
 }
 
 workflow {
@@ -98,8 +117,12 @@ workflow {
 
     if( selectedWorkflow == 'analyze' ) {
         def compatibility = validateAnalyzeBundleCompatibility()
-        writeBundleCompatibilityRecord(compatibility)
-        VALIDATE_SAMPLESHEET(params.input)
+        VALIDATE_SAMPLESHEET(params.input).records
+            .collect()
+            .map { records ->
+                writeBundleCompatibilityRecord(compatibility)
+                records
+            }
     }
     else {
         error "Workflow '${selectedWorkflow}' is not implemented"

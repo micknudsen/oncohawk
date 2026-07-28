@@ -19,7 +19,7 @@ nextflow_pipeline {
 
         then {
             assert workflow.success
-            def record = new File(outputRoot, 'bundle-compatibility.json')
+            def record = new File(outputRoot, 'metadata/bundle-compatibility.json')
             assert record.isFile()
             assert new groovy.json.JsonSlurper().parse(record) == [
                 reference_bundle_id: 'reference-test-001',
@@ -29,12 +29,21 @@ nextflow_pipeline {
         }
     }
 
-    test('replaces an existing compatibility record') {
-        def outputRoot = new File("${projectDir}/.nf-test/replaced-compatibility-record")
+    test('preserves a matching compatibility record') {
+        def outputRoot = new File("${projectDir}/.nf-test/existing-compatibility-record")
+        def expectedRecord = '''{
+    "reference_bundle_id": "reference-test-001",
+    "knowledge_bundle_id": "knowledge-test-001",
+    "knowledge_source_reference_bundle_id": "reference-test-001"
+}
+'''
 
         when {
+            outputRoot.deleteDir()
             outputRoot.mkdirs()
-            new File(outputRoot, 'bundle-compatibility.json').text = '{"stale":true}\n'
+            def metadataDirectory = new File(outputRoot, 'metadata')
+            metadataDirectory.mkdirs()
+            new File(metadataDirectory, 'bundle-compatibility.json').text = expectedRecord
             params {
                 delegate.setProperty('workflow', 'analyze')
                 outdir = outputRoot.toString()
@@ -46,11 +55,98 @@ nextflow_pipeline {
 
         then {
             assert workflow.success
-            assert new groovy.json.JsonSlurper().parse(new File(outputRoot, 'bundle-compatibility.json')) == [
-                reference_bundle_id: 'reference-test-001',
-                knowledge_bundle_id: 'knowledge-test-001',
-                knowledge_source_reference_bundle_id: 'reference-test-001'
-            ]
+            assert new File(outputRoot, 'metadata/bundle-compatibility.json').text == expectedRecord
+        }
+    }
+
+    test('rejects a conflicting existing compatibility record without replacing it') {
+        def outputRoot = new File("${projectDir}/.nf-test/conflicting-compatibility-record")
+        def conflictingRecord = new File(outputRoot, 'metadata/bundle-compatibility.json')
+
+        when {
+            outputRoot.deleteDir()
+            conflictingRecord.parentFile.mkdirs()
+            conflictingRecord.text = '{"stale":true}\n'
+            params {
+                delegate.setProperty('workflow', 'analyze')
+                outdir = outputRoot.toString()
+                input = "${projectDir}/tests/fixtures/valid.csv"
+                reference_bundle = "${projectDir}/tests/fixtures/bundles/reference-matching"
+                knowledge_bundle = "${projectDir}/tests/fixtures/bundles/knowledge-matching"
+            }
+        }
+
+        then {
+            assert workflow.failed
+            assert workflow.stdout.any { line -> line.contains('Conflicting bundle compatibility record') }
+            assert conflictingRecord.text == '{"stale":true}\n'
+        }
+    }
+
+    test('does not create an output directory when sample-sheet preflight fails') {
+        def outputRoot = new File("${projectDir}/.nf-test/invalid-sample-sheet-output")
+
+        when {
+            outputRoot.deleteDir()
+            params {
+                delegate.setProperty('workflow', 'analyze')
+                outdir = outputRoot.toString()
+                input = "${projectDir}/tests/fixtures/invalid_header.csv"
+                reference_bundle = "${projectDir}/tests/fixtures/bundles/reference-matching"
+                knowledge_bundle = "${projectDir}/tests/fixtures/bundles/knowledge-matching"
+            }
+        }
+
+        then {
+            assert workflow.failed
+            assert workflow.stdout.any { line -> line.contains('header: expected exactly') }
+            assert !outputRoot.exists()
+        }
+    }
+
+    test('rejects a file passed as the output directory') {
+        def outputRoot = new File("${projectDir}/.nf-test/file-output-root")
+
+        when {
+            outputRoot.parentFile.mkdirs()
+            outputRoot.text = 'not a directory\n'
+            params {
+                delegate.setProperty('workflow', 'analyze')
+                outdir = outputRoot.toString()
+                input = "${projectDir}/tests/fixtures/valid.csv"
+                reference_bundle = "${projectDir}/tests/fixtures/bundles/reference-matching"
+                knowledge_bundle = "${projectDir}/tests/fixtures/bundles/knowledge-matching"
+            }
+        }
+
+        then {
+            assert workflow.failed
+            assert workflow.stdout.any { line -> line.contains('Invalid --outdir: expected a directory') }
+            assert outputRoot.text == 'not a directory\n'
+        }
+    }
+
+    test('rejects a file at the metadata path') {
+        def outputRoot = new File("${projectDir}/.nf-test/file-metadata-path")
+        def metadataPath = new File(outputRoot, 'metadata')
+
+        when {
+            outputRoot.deleteDir()
+            outputRoot.mkdirs()
+            metadataPath.text = 'not a directory\n'
+            params {
+                delegate.setProperty('workflow', 'analyze')
+                outdir = outputRoot.toString()
+                input = "${projectDir}/tests/fixtures/valid.csv"
+                reference_bundle = "${projectDir}/tests/fixtures/bundles/reference-matching"
+                knowledge_bundle = "${projectDir}/tests/fixtures/bundles/knowledge-matching"
+            }
+        }
+
+        then {
+            assert workflow.failed
+            assert workflow.stdout.any { line -> line.contains('Invalid metadata path: expected a directory') }
+            assert metadataPath.text == 'not a directory\n'
         }
     }
 
@@ -183,7 +279,7 @@ nextflow_pipeline {
         then {
             assert workflow.failed
             assert workflow.stdout.any { line -> line.contains('Invalid --reference_bundle: expected a local bundle-root directory') }
-            assert !new File(outputRoot, 'bundle-compatibility.json').exists()
+            assert !outputRoot.exists()
         }
     }
 
@@ -289,7 +385,7 @@ nextflow_pipeline {
         then {
             assert workflow.failed
             assert workflow.stdout.any { line -> line.contains('Invalid bundle compatibility: knowledge manifest source_reference_bundle_id does not match reference manifest bundle_id') }
-            assert !new File(outputRoot, 'bundle-compatibility.json').exists()
+            assert !outputRoot.exists()
         }
     }
 
