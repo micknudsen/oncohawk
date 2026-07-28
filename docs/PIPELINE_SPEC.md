@@ -174,10 +174,16 @@ contain exactly one of each required key:
 - `flowcell_id`; and
 - `lane`.
 
-It may contain one `platform` entry. If omitted, `platform` is `ILLUMINA`.
-No other keys are permitted by the current target contract. The platform
-vocabulary beyond the default is not decided here; a supplied value must be
-non-empty.
+It may contain one `platform` entry and one `barcode` entry. If omitted,
+`platform` is `ILLUMINA`. A supplied `platform` must be exactly one of the
+uppercase SAM values `CAPILLARY`, `DNBSEQ`, `ELEMENT`, `HELICOS`, `ILLUMINA`,
+`IONTORRENT`, `LS454`, `ONT`, `PACBIO`, `SINGULAR`, `SOLID`, or `ULTIMA`.
+Lowercase and other values are invalid. `barcode` is the demultiplexing sample
+barcode, not a UMI or another laboratory identifier. It must be either one
+uppercase IUPAC DNA sequence or two such sequences joined by `+` as `i7+i5`.
+It is retained exactly as supplied; OncoHawk does not reverse-complement or
+otherwise transform it. No other keys are permitted by the current target
+contract.
 
 `filepath` is required and contains exactly two semicolon-separated paths: R1
 then R2. Both paths must name non-interleaved `.fastq.gz` or `.fq.gz` files. The
@@ -188,12 +194,21 @@ underscore, a period, or a hyphen. Common Illumina names such as
 paths are resolved from the directory containing the sample sheet.
 
 The tuple (`sample_id`, `library_id`, `flowcell_id`, `lane`) must be unique.
-The sample sheet does not contain a read-group identifier. A future pipeline
-will construct GATK-compatible read groups deterministically from the sample,
-library, flowcell, lane, and platform metadata. It will set sample (`SM`) from
-`sample_id`, library (`LB`) from `library_id`, and platform (`PL`) from the
-provided or defaulted platform value. The exact serialization of the generated
-read-group ID (`ID`) and platform unit (`PU`) remains an implementation matter.
+Structural validation emits normalized records with `barcode`, `read_group_id`,
+and `platform_unit` fields. `barcode` is the raw validated value or null when
+absent. The future pipeline will set read-group sample (`SM`) from `sample_id`,
+library (`LB`) from `library_id`, and platform (`PL`) from the provided or
+defaulted platform value.
+
+For `read_group_id`, OncoHawk composes `sample_id`, `library_id`,
+`flowcell_id`, and `lane` in that order. For `platform_unit`, it composes
+`flowcell_id`, `lane`, and `barcode` when a barcode is present; otherwise it
+uses `read_group_id`. Components are joined with `.` after percent-encoding
+their UTF-8 bytes. Only `A-Z`, `a-z`, `0-9`, `_`, and `-` remain literal; every
+other byte is encoded as uppercase `%HH`. This produces reversible printable
+ASCII values without delimiter ambiguity. Generated `read_group_id` and
+`platform_unit` values must each be unique within a run; a collision is a
+structural validation failure.
 
 The target contract requires structural validation of the exact headers,
 required fields, `filetype`, `info` grammar and keys, path-pair grammar, sample
