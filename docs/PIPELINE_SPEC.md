@@ -133,8 +133,25 @@ bundle-preparation parameter to `analyze` other than its required input-bundle
 parameters.
 
 The `--workflow` selector and these parameter boundaries are target-contract
-requirements, not implemented behavior. Output-set layout and existing-output
-directory behavior remain open.
+requirements, not implemented behavior.
+
+## Analyze output-set boundary
+
+The current executable `analyze` path writes its run-level compatibility
+metadata to `metadata/bundle-compatibility.json` beneath `--outdir`. The
+metadata directory is reserved for non-report, run-level metadata. This
+increment does not define the treatment of other existing contents beneath
+`--outdir`, or the future publishing, collision, and resume behavior of
+analytical outputs.
+
+The compatibility record is created only after the current bundle and
+sample-sheet preflight validations succeed. A failed preflight must create
+neither `--outdir` nor its `metadata` directory. If the record already exists,
+the workflow accepts it only when its bytes exactly equal the deterministic
+record it would produce; a differing record is a failure and is not replaced.
+`--outdir` and an existing `metadata` path must each be directories.
+
+The broader analysis output-set layout remains open.
 
 ## Analyze input boundary
 
