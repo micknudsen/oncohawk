@@ -106,6 +106,48 @@ def parsePaths(int rowNumber, String value, Path sampleSheetDirectory, List<Stri
     }
 }
 
+def validateFastqPaths(int rowNumber, List<String> paths, List<String> diagnostics) {
+    def resolvedPaths = [null, null]
+
+    paths.eachWithIndex { path, index ->
+        def mate = index == 0 ? 'R1' : 'R2'
+        def candidate = java.nio.file.Path.of(path)
+
+        try {
+            def resolved = candidate.toRealPath()
+            if( !java.nio.file.Files.isRegularFile(resolved) ) {
+                diagnostics << "row ${rowNumber}, filepath: ${mate} must resolve to a regular file"
+            }
+            else if( !java.nio.file.Files.isReadable(resolved) ) {
+                diagnostics << "row ${rowNumber}, filepath: ${mate} must resolve to a readable file"
+            }
+            else {
+                resolvedPaths[index] = resolved
+            }
+        }
+        catch( java.nio.file.NoSuchFileException _ignored ) {
+            diagnostics << "row ${rowNumber}, filepath: ${mate} path does not exist"
+        }
+        catch( java.nio.file.AccessDeniedException _ignored ) {
+            diagnostics << "row ${rowNumber}, filepath: ${mate} path is not readable"
+        }
+        catch( java.io.IOException _ignored ) {
+            diagnostics << "row ${rowNumber}, filepath: ${mate} path cannot be resolved"
+        }
+    }
+
+    if( resolvedPaths.every { path -> path != null } ) {
+        try {
+            if( java.nio.file.Files.isSameFile(resolvedPaths[0], resolvedPaths[1]) ) {
+                diagnostics << "row ${rowNumber}, filepath: R1 and R2 must resolve to distinct files"
+            }
+        }
+        catch( java.io.IOException _ignored ) {
+            diagnostics << "row ${rowNumber}, filepath: R1 and R2 paths cannot be compared"
+        }
+    }
+}
+
 def validateSamplesheet(sampleSheet) {
     def diagnostics = []
     def records = []
@@ -143,6 +185,9 @@ def validateSamplesheet(sampleSheet) {
 
         def info = parseInfo(rowNumber, fields[3], diagnostics)
         def paths = parsePaths(rowNumber, fields[4], sampleSheet.parent ?: java.nio.file.Path.of('.'), diagnostics)
+        if( paths.every { path -> path } ) {
+            validateFastqPaths(rowNumber, paths, diagnostics)
+        }
         if( rowDiagnostics.isEmpty() && info.keySet().containsAll(['library_id', 'flowcell_id', 'lane']) && paths.every { path -> path } ) {
             def readGroupId = composeReadGroupValue([fields[1], info.library_id, info.flowcell_id, info.lane])
             def platformUnit = info.containsKey('barcode') ? composeReadGroupValue([info.flowcell_id, info.lane, info.barcode]) : readGroupId

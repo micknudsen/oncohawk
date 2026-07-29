@@ -104,6 +104,27 @@ nextflow_pipeline {
         }
     }
 
+    test('does not create an output directory when a declared FASTQ is missing') {
+        def outputRoot = new File("${projectDir}/.nf-test/missing-fastq-output")
+
+        when {
+            outputRoot.deleteDir()
+            params {
+                delegate.setProperty('workflow', 'analyze')
+                outdir = outputRoot.toString()
+                input = "${projectDir}/tests/fixtures/invalid_missing_fastq.csv"
+                reference_bundle = "${projectDir}/tests/fixtures/bundles/reference-matching"
+                knowledge_bundle = "${projectDir}/tests/fixtures/bundles/knowledge-matching"
+            }
+        }
+
+        then {
+            assert workflow.failed
+            assert workflow.stdout.any { line -> line.contains('R1 path does not exist') }
+            assert !outputRoot.exists()
+        }
+    }
+
     test('rejects a file passed as the output directory') {
         def outputRoot = new File("${projectDir}/.nf-test/file-output-root")
 
