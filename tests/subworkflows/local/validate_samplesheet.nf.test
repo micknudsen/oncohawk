@@ -64,6 +64,72 @@ nextflow_function {
         }
     }
 
+    test('accepts FASTQ paths through symlinks') {
+        def fixtureDirectory = new File("${projectDir}/.nf-test/path-preflight-symlink")
+        def sampleSheet = new File(fixtureDirectory, 'samples.csv')
+
+        when {
+            fixtureDirectory.deleteDir()
+            fixtureDirectory.mkdirs()
+            def r1Target = new File(fixtureDirectory, 'target_R1.fastq.gz')
+            def r2Target = new File(fixtureDirectory, 'target_R2.fastq.gz')
+            r1Target.text = 'synthetic R1\n'
+            r2Target.text = 'synthetic R2\n'
+            java.nio.file.Files.createSymbolicLink(new File(fixtureDirectory, 'linked_R1.fastq.gz').toPath(), r1Target.toPath())
+            java.nio.file.Files.createSymbolicLink(new File(fixtureDirectory, 'linked_R2.fastq.gz').toPath(), r2Target.toPath())
+            sampleSheet.text = """patient_id,sample_id,filetype,info,filepath
+patient_001,sample_001,fastq,library_id:lib_A;flowcell_id:FC123;lane:001,linked_R1.fastq.gz;linked_R2.fastq.gz
+"""
+            function {
+                """
+                input[0] = file("${sampleSheet}")
+                """
+            }
+        }
+
+        then {
+            assert function.success
+        }
+    }
+
+    [
+        [name: 'a missing FASTQ path', r1: 'missing_R1.fastq.gz', r2: 'present_R2.fastq.gz', diagnostic: 'R1 path does not exist'],
+        [name: 'a non-regular FASTQ path', r1: 'directory_R1.fastq.gz', r2: 'present_R2.fastq.gz', diagnostic: 'R1 must resolve to a regular file'],
+        [name: 'symlink aliases for R1 and R2', r1: 'alias_R1.fastq.gz', r2: 'alias_R2.fastq.gz', diagnostic: 'R1 and R2 must resolve to distinct files'],
+        [name: 'hard-link aliases for R1 and R2', r1: 'target_R1.fastq.gz', r2: 'hardlink_R2.fastq.gz', diagnostic: 'R1 and R2 must resolve to distinct files']
+    ].each { scenario ->
+        test("rejects ${scenario.name}") {
+            def fixtureDirectory = new File("${projectDir}/.nf-test/path-preflight-${scenario.name.replaceAll('[^a-z]+', '-')}")
+            def sampleSheet = new File(fixtureDirectory, 'samples.csv')
+
+            when {
+                fixtureDirectory.deleteDir()
+                fixtureDirectory.mkdirs()
+                def r1Target = new File(fixtureDirectory, 'target_R1.fastq.gz')
+                def r2Target = new File(fixtureDirectory, 'present_R2.fastq.gz')
+                r1Target.text = 'synthetic R1\n'
+                r2Target.text = 'synthetic R2\n'
+                new File(fixtureDirectory, 'directory_R1.fastq.gz').mkdirs()
+                java.nio.file.Files.createSymbolicLink(new File(fixtureDirectory, 'alias_R1.fastq.gz').toPath(), r1Target.toPath())
+                java.nio.file.Files.createSymbolicLink(new File(fixtureDirectory, 'alias_R2.fastq.gz').toPath(), r1Target.toPath())
+                java.nio.file.Files.createLink(new File(fixtureDirectory, 'hardlink_R2.fastq.gz').toPath(), r1Target.toPath())
+                sampleSheet.text = """patient_id,sample_id,filetype,info,filepath
+patient_001,sample_001,fastq,library_id:lib_A;flowcell_id:FC123;lane:001,${scenario.r1};${scenario.r2}
+"""
+                function {
+                    """
+                    input[0] = file("${sampleSheet}")
+                    """
+                }
+            }
+
+            then {
+                assert function.failed
+                assert function.stdout.any { line -> line.contains(scenario.diagnostic) }
+            }
+        }
+    }
+
     [
         'invalid_header.csv': 'header: expected exactly',
         'invalid_missing_field.csv': 'sample_id: value is required',
@@ -71,6 +137,7 @@ nextflow_function {
         'invalid_info.csv': "info: unknown key 'unknown'",
         'invalid_duplicate_info.csv': "info: key 'library_id' must occur exactly once",
         'invalid_paths.csv': 'filepath: first path must name a .fastq.gz or .fq.gz file with an R1 mate token',
+        'invalid_missing_fastq.csv': 'R1 path does not exist',
         'invalid_mapping.csv': "sample_id: 'sample_001' maps to more than one patient_id",
         'invalid_tuple.csv': 'duplicate (sample_id, library_id, flowcell_id, lane) tuple',
         'invalid_quoted_field.csv': 'quoted CSV fields are not supported',

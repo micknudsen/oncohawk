@@ -209,6 +209,11 @@ delimited `R2` mate token; delimiters are the start or end of the filename, an
 underscore, a period, or a hyphen. Common Illumina names such as
 `sample_R1_001.fastq.gz` and `sample_R2_001.fastq.gz` are accepted. Relative
 paths are resolved from the directory containing the sample sheet.
+Each declared path must exist and resolve to a readable regular file; symlinked
+FASTQs are accepted when their targets meet those conditions. R1 and R2 must
+resolve to distinct underlying files, including when aliases are created with
+symlinks or hard links. Remote and object-store paths are outside this
+contract.
 
 The tuple (`sample_id`, `library_id`, `flowcell_id`, `lane`) must be unique.
 Structural validation emits normalized records with `barcode`, `read_group_id`,
@@ -227,10 +232,10 @@ ASCII values without delimiter ambiguity. Generated `read_group_id` and
 `platform_unit` values must each be unique within a run; a collision is a
 structural validation failure.
 
-The target contract requires structural validation of the exact headers,
-required fields, `filetype`, `info` grammar and keys, path-pair grammar, sample
-to patient mapping, and the unique tuple. It does not require a file-existence,
-readability, or FASTQ-content scan.
+The target contract requires preflight validation of the exact headers,
+required fields, `filetype`, `info` grammar and keys, path-pair grammar, local
+FASTQ-file eligibility, sample to patient mapping, and the unique tuple. It
+does not require a FASTQ-content scan.
 
 Valid synthetic example:
 
