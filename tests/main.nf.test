@@ -18,10 +18,10 @@ nextflow_pipeline {
 
         then {
             assert workflow.success
-            def referenceRoot = new File(outputRoot, 'reference')
-            def fasta = new File(referenceRoot, 'fasta/GCA_000001405.15_GRCh38_no_alt_analysis_set.masked.fna')
-            def manifest = new groovy.json.JsonSlurper().parse(new File(referenceRoot, 'manifest.json'))
+            def fasta = new File(outputRoot, 'fasta/GCA_000001405.15_GRCh38_no_alt_analysis_set.masked.fna')
+            def manifest = new groovy.json.JsonSlurper().parse(new File(outputRoot, 'manifest.json'))
             assert fasta.isFile()
+            assert !new File(outputRoot, 'reference').exists()
             assert manifest.bundle_id == 'oncohawk-reference-hg38-beta-1'
             assert manifest.source_fasta_url == 'https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.gz'
             assert manifest.source_fasta_md5 == 'a08035b6a6e31780e96a34008ff21bd6'
