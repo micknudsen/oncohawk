@@ -41,15 +41,16 @@ process ASSEMBLE_REFERENCE_BUNDLE {
     val exclusions_md5
 
     output:
-    path 'reference'
+    path 'fasta'
+    path 'manifest.json'
 
     script:
     def fasta_name = 'GCA_000001405.15_GRCh38_no_alt_analysis_set.masked.fna'
     """
-    mkdir -p reference/fasta
-    cp '${masked_fasta}' "reference/fasta/${fasta_name}"
-    sha256sum "reference/fasta/${fasta_name}" | cut -d ' ' -f 1 > masked.sha256
-    cat > reference/manifest.json <<EOF
+    mkdir -p fasta
+    cp '${masked_fasta}' "fasta/${fasta_name}"
+    sha256sum "fasta/${fasta_name}" | cut -d ' ' -f 1 > masked.sha256
+    cat > manifest.json <<EOF
     {
       "bundle_id": "oncohawk-reference-hg38-beta-1",
       "source_fasta_url": "${fasta_url}",

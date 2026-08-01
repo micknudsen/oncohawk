@@ -296,7 +296,7 @@ source FASTA and exclusions BED above. It does not yet provide durable download
 caching; cache location, collision, and resume behavior remain open.
 `--reference_spec` is not yet supported.
 
-The reference bundle root is `reference/` beneath `--outdir`. It contains
+The reference bundle root is the directory supplied through `--outdir`. It contains
 `manifest.json` and
 `fasta/GCA_000001405.15_GRCh38_no_alt_analysis_set.masked.fna`. The manifest
 declares bundle ID `oncohawk-reference-hg38-beta-1`, the source URLs and
