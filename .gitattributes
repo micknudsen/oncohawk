@@ -1,0 +1,1 @@
+modules/nf-core/**/tests/*.snap -whitespace
