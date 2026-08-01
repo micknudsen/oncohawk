@@ -1,0 +1,32 @@
+nextflow_process {
+    name 'Verify reference downloads'
+    script '../../../subworkflows/local/prepare_reference_bundle.nf'
+    process 'VERIFY_REFERENCE_DOWNLOADS'
+
+    [
+        [name: 'FASTA', fastaMd5: '00000000000000000000000000000000', exclusionsMd5: '77e9a6301cddcf6c0fe1c3edb516123e'],
+        [name: 'exclusions BED', fastaMd5: '5c085ba3b0fab6fe3c4f7d1d864854ce', exclusionsMd5: '00000000000000000000000000000000']
+    ].each { scenario ->
+    test("rejects a ${scenario.name} with a mismatched checksum") {
+        def fixtureDirectory = new File("${projectDir}/.nf-test/reference-download-verification")
+        def fasta = new File(fixtureDirectory, 'source.fna.gz')
+        def exclusions = new File(fixtureDirectory, 'exclusions.bed')
+
+        when {
+            fixtureDirectory.deleteDir()
+            fixtureDirectory.mkdirs()
+            fasta.text = 'synthetic FASTA\\n'
+            exclusions.text = 'synthetic BED\\n'
+            process {
+                """
+                input[0] = [[id: 'grch38'], file('${fasta}'), file('${exclusions}'), '${scenario.fastaMd5}', '${scenario.exclusionsMd5}']
+                """
+            }
+        }
+
+        then {
+            assert process.failed
+        }
+    }
+    }
+}

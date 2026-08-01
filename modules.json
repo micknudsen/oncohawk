@@ -1,0 +1,27 @@
+{
+  "name": "oncohawk",
+  "homePage": "",
+  "repos": {
+    "https://github.com/nf-core/modules.git": {
+      "modules": {
+        "nf-core": {
+          "bedtools/maskfasta": {
+            "branch": "master",
+            "git_sha": "a3b787358fa965b5f242b2408d52e8d0a28aaca2",
+            "installed_by": ["modules"]
+          },
+          "gunzip": {
+            "branch": "master",
+            "git_sha": "a3b787358fa965b5f242b2408d52e8d0a28aaca2",
+            "installed_by": ["modules"]
+          },
+          "wget": {
+            "branch": "master",
+            "git_sha": "a3b787358fa965b5f242b2408d52e8d0a28aaca2",
+            "installed_by": ["modules"]
+          }
+        }
+      }
+    }
+  }
+}
