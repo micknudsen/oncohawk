@@ -299,9 +299,13 @@ caching; cache location, collision, and resume behavior remain open.
 The reference bundle root is the directory supplied through `--outdir`. It contains
 `manifest.json` and
 `fasta/GCA_000001405.15_GRCh38_no_alt_analysis_set.masked.fna`. The manifest
-declares bundle ID `oncohawk-reference-hg38-beta-1`, the source URLs and
-verified MD5 values, the masking transformation, and the derived FASTA SHA-256.
-This initial ID must change whenever the bundle contents change.
+has schema version `1` and declares bundle ID
+`oncohawk-reference-hg38-beta-2`. Its `reference` object records the assembly,
+UCSC contig naming, source FASTA filename, URL, and verified MD5, plus the
+relative path and SHA-256 of the derived masked FASTA. Its `mask` object
+records the exclusions BED filename, URL, and verified MD5, and the masking
+method, replacement base, and coordinate system. This bundle ID must change
+whenever the bundle contents change.
 
 The implementation downloads with a pinned nf-core WGET module, verifies both
 source MD5 values, decompresses the source FASTA, and applies the exclusions
