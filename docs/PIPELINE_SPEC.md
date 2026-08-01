@@ -292,9 +292,9 @@ dependent analysis components are approved.
 ### Initial executable reference-bundle boundary
 
 The current `prepare_reference_bundle` path implements only the pinned default
-source FASTA and exclusions BED above. It requires `--download_cache`, a local
-writable directory used as durable storage for downloaded source artifacts; it
-is not part of the resulting bundle. `--reference_spec` is not yet supported.
+source FASTA and exclusions BED above. It does not yet provide durable download
+caching; cache location, collision, and resume behavior remain open.
+`--reference_spec` is not yet supported.
 
 The reference bundle root is `reference/` beneath `--outdir`. It contains
 `manifest.json` and

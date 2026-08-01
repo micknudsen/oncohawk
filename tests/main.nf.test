@@ -5,17 +5,14 @@ nextflow_pipeline {
 
     test('stubs default reference-bundle preparation without downloading GRCh38') {
         def outputRoot = new File("${projectDir}/.nf-test/reference-bundle")
-        def cacheRoot = new File("${projectDir}/.nf-test/reference-download-cache")
 
         options '-stub'
 
         when {
             outputRoot.deleteDir()
-            cacheRoot.deleteDir()
             params {
                 delegate.setProperty('workflow', 'prepare_reference_bundle')
                 outdir = outputRoot.toString()
-                download_cache = cacheRoot.toString()
             }
         }
 
@@ -36,17 +33,14 @@ nextflow_pipeline {
 
     test('rejects a source checksum override') {
         def outputRoot = new File("${projectDir}/.nf-test/reference-bundle-bad-checksum")
-        def cacheRoot = new File("${projectDir}/.nf-test/reference-download-cache-bad-checksum")
 
         options '-stub'
 
         when {
             outputRoot.deleteDir()
-            cacheRoot.deleteDir()
             params {
                 delegate.setProperty('workflow', 'prepare_reference_bundle')
                 outdir = outputRoot.toString()
-                download_cache = cacheRoot.toString()
                 reference_fasta_md5 = '00000000000000000000000000000000'
             }
         }
@@ -464,17 +458,18 @@ nextflow_pipeline {
         }
     }
 
-    test('requires a download cache for reference preparation') {
+    test('rejects a download cache for reference preparation') {
         when {
             params {
                 delegate.setProperty('workflow', 'prepare_reference_bundle')
                 outdir = 'unused-output-root'
+                download_cache = 'unused-download-cache'
             }
         }
 
         then {
             assert workflow.failed
-            assert workflow.stdout.any { line -> line.contains('Missing required parameter: --download_cache') }
+            assert workflow.stdout.any { line -> line.contains('Parameter --download_cache is not valid for --workflow prepare_reference_bundle') }
         }
     }
 

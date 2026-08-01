@@ -11,7 +11,7 @@ def requireValue(String name, Object value) {
 
 def validateWorkflowParameters() {
     def workflowParameters = [
-        prepare_reference_bundle: [required: ['download_cache'], optional: ['reference_spec']],
+        prepare_reference_bundle: [required: [], optional: ['reference_spec']],
         prepare_knowledge_bundle: [required: ['reference_bundle'], optional: ['knowledge_spec']],
         analyze: [required: ['input', 'reference_bundle', 'knowledge_bundle'], optional: []]
     ]
@@ -41,16 +41,6 @@ def validateWorkflowParameters() {
 def validateReferenceBundleParameters() {
     if( params.reference_spec != null ) {
         error 'Parameter --reference_spec is not yet supported for --workflow prepare_reference_bundle'
-    }
-    def cache = new File(params.download_cache.toString())
-    if( cache.exists() && !cache.isDirectory() ) {
-        error 'Invalid --download_cache: expected a directory'
-    }
-    if( !cache.exists() && !cache.mkdirs() ) {
-        error "Unable to create --download_cache: ${cache}"
-    }
-    if( !cache.canWrite() ) {
-        error 'Invalid --download_cache: directory is not writable'
     }
 }
 
