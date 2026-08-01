@@ -30,11 +30,12 @@ process VERIFY_REFERENCE_DOWNLOADS {
 }
 
 process ASSEMBLE_REFERENCE_BUNDLE {
-    tag 'oncohawk-reference-hg38-beta-1'
+    tag "${bundle_id}"
     publishDir params.outdir, mode: 'copy', overwrite: false
 
     input:
     path masked_fasta
+    val bundle_id
     val fasta_url
     val fasta_md5
     val exclusions_url
@@ -55,7 +56,7 @@ process ASSEMBLE_REFERENCE_BUNDLE {
     cat > manifest.json <<EOF
     {
       "schema_version": 1,
-      "bundle_id": "oncohawk-reference-hg38-beta-2",
+      "bundle_id": "${bundle_id}",
       "reference": {
         "assembly": "GCA_000001405.15_GRCh38",
         "contig_naming": "ucsc",
@@ -86,6 +87,7 @@ process ASSEMBLE_REFERENCE_BUNDLE {
 
 workflow PREPARE_REFERENCE_BUNDLE {
     main:
+    def bundleId = 'oncohawk-reference-hg38-beta-2'
     def fasta_url = 'https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.gz'
     def fasta_md5 = 'a08035b6a6e31780e96a34008ff21bd6'
     def exclusions_url = 'https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/GCA_000001405.15_GRCh38_GRC_exclusions.bed'
@@ -99,6 +101,6 @@ workflow PREPARE_REFERENCE_BUNDLE {
     verified = VERIFY_REFERENCE_DOWNLOADS(fasta_download.combine(exclusions_download).map { _fasta_meta, fasta, _exclusions_meta, exclusions -> tuple([id: 'grch38'], fasta, exclusions, fasta_md5, exclusions_md5) })
     decompressed = GUNZIP(verified.fasta)
     masked = BEDTOOLS_MASKFASTA(verified.exclusions, decompressed.gunzip.map { _meta, fasta -> fasta })
-    ASSEMBLE_REFERENCE_BUNDLE(masked.fasta.map { _meta, fasta -> fasta }, fasta_url, fasta_md5, exclusions_url, exclusions_md5)
+    ASSEMBLE_REFERENCE_BUNDLE(masked.fasta.map { _meta, fasta -> fasta }, bundleId, fasta_url, fasta_md5, exclusions_url, exclusions_md5)
 
 }
