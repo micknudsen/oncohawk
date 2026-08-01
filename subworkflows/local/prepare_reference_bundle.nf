@@ -46,19 +46,39 @@ process ASSEMBLE_REFERENCE_BUNDLE {
 
     script:
     def fasta_name = 'GCA_000001405.15_GRCh38_no_alt_analysis_set.masked.fna'
+    def source_fasta_name = 'GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.gz'
+    def exclusions_bed_name = 'GCA_000001405.15_GRCh38_GRC_exclusions.bed'
     """
     mkdir -p fasta
     cp '${masked_fasta}' "fasta/${fasta_name}"
     sha256sum "fasta/${fasta_name}" | cut -d ' ' -f 1 > masked.sha256
     cat > manifest.json <<EOF
     {
-      "bundle_id": "oncohawk-reference-hg38-beta-1",
-      "source_fasta_url": "${fasta_url}",
-      "source_fasta_md5": "${fasta_md5}",
-      "exclusions_bed_url": "${exclusions_url}",
-      "exclusions_bed_md5": "${exclusions_md5}",
-      "masking": "bedtools maskfasta with zero-based, half-open BED intervals",
-      "masked_fasta_sha256": "\$(cat masked.sha256)"
+      "schema_version": 1,
+      "bundle_id": "oncohawk-reference-hg38-beta-2",
+      "reference": {
+        "assembly": "GCA_000001405.15_GRCh38",
+        "contig_naming": "ucsc",
+        "source_fasta": {
+          "filename": "${source_fasta_name}",
+          "url": "${fasta_url}",
+          "md5": "${fasta_md5}"
+        },
+        "masked_fasta": {
+          "path": "fasta/${fasta_name}",
+          "sha256": "\$(cat masked.sha256)"
+        }
+      },
+      "mask": {
+        "method": "bedtools_maskfasta",
+        "bed": {
+          "filename": "${exclusions_bed_name}",
+          "url": "${exclusions_url}",
+          "md5": "${exclusions_md5}"
+        },
+        "replacement_base": "N",
+        "coordinate_system": "0-based-half-open"
+      }
     }
     EOF
     """

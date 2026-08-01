@@ -22,12 +22,32 @@ nextflow_pipeline {
             def manifest = new groovy.json.JsonSlurper().parse(new File(outputRoot, 'manifest.json'))
             assert fasta.isFile()
             assert !new File(outputRoot, 'reference').exists()
-            assert manifest.bundle_id == 'oncohawk-reference-hg38-beta-1'
-            assert manifest.source_fasta_url == 'https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.gz'
-            assert manifest.source_fasta_md5 == 'a08035b6a6e31780e96a34008ff21bd6'
-            assert manifest.exclusions_bed_url == 'https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/GCA_000001405.15_GRCh38_GRC_exclusions.bed'
-            assert manifest.exclusions_bed_md5 == 'bf5c011e0342f355422144eb3547b5d0'
-            assert manifest.masked_fasta_sha256 == 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
+            assert manifest.schema_version == 1
+            assert manifest.bundle_id == 'oncohawk-reference-hg38-beta-2'
+            assert manifest.reference == [
+                assembly: 'GCA_000001405.15_GRCh38',
+                contig_naming: 'ucsc',
+                source_fasta: [
+                    filename: 'GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.gz',
+                    url: 'https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.gz',
+                    md5: 'a08035b6a6e31780e96a34008ff21bd6'
+                ],
+                masked_fasta: [
+                    path: 'fasta/GCA_000001405.15_GRCh38_no_alt_analysis_set.masked.fna',
+                    sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
+                ]
+            ]
+            assert manifest.mask == [
+                method: 'bedtools_maskfasta',
+                bed: [
+                    filename: 'GCA_000001405.15_GRCh38_GRC_exclusions.bed',
+                    url: 'https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/GCA_000001405.15_GRCh38_GRC_exclusions.bed',
+                    md5: 'bf5c011e0342f355422144eb3547b5d0'
+                ],
+                replacement_base: 'N',
+                coordinate_system: '0-based-half-open'
+            ]
+            assert !manifest.containsKey('indexing')
         }
     }
 
