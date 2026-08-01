@@ -196,6 +196,9 @@ proposal for the next increment.
 
 ## Development discipline
 
+- Run `nextflow`, `nf-core`, and `nf-test` through the `nextflow` Conda
+  environment (for example, `conda run -n nextflow nextflow ...`).
+
 - Work in small, self-contained, testable, and reviewable increments.
 - Do not create a broad scaffold or empty placeholders for a planned tree.
 - Create a document only when the approved increment gives it substantive
