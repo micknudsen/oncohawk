@@ -3,6 +3,54 @@ nextflow_pipeline {
     script '../main.nf'
     config './nextflow.config'
 
+    test('stubs default reference-bundle preparation without downloading GRCh38') {
+        def outputRoot = new File("${projectDir}/.nf-test/reference-bundle")
+
+        options '-stub'
+
+        when {
+            outputRoot.deleteDir()
+            params {
+                delegate.setProperty('workflow', 'prepare_reference_bundle')
+                outdir = outputRoot.toString()
+            }
+        }
+
+        then {
+            assert workflow.success
+            def referenceRoot = new File(outputRoot, 'reference')
+            def fasta = new File(referenceRoot, 'fasta/GCA_000001405.15_GRCh38_no_alt_analysis_set.masked.fna')
+            def manifest = new groovy.json.JsonSlurper().parse(new File(referenceRoot, 'manifest.json'))
+            assert fasta.isFile()
+            assert manifest.bundle_id == 'oncohawk-reference-hg38-beta-1'
+            assert manifest.source_fasta_url == 'https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.gz'
+            assert manifest.source_fasta_md5 == 'a08035b6a6e31780e96a34008ff21bd6'
+            assert manifest.exclusions_bed_url == 'https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/GCA_000001405.15_GRCh38_GRC_exclusions.bed'
+            assert manifest.exclusions_bed_md5 == 'bf5c011e0342f355422144eb3547b5d0'
+            assert manifest.masked_fasta_sha256 == 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
+        }
+    }
+
+    test('rejects a source checksum override') {
+        def outputRoot = new File("${projectDir}/.nf-test/reference-bundle-bad-checksum")
+
+        options '-stub'
+
+        when {
+            outputRoot.deleteDir()
+            params {
+                delegate.setProperty('workflow', 'prepare_reference_bundle')
+                outdir = outputRoot.toString()
+                reference_fasta_md5 = '00000000000000000000000000000000'
+            }
+        }
+
+        then {
+            assert workflow.failed
+            assert workflow.stdout.any { line -> line.contains('Parameter --reference_fasta_md5 is not valid for --workflow prepare_reference_bundle') }
+        }
+    }
+
     test('accepts a valid synthetic sample sheet') {
         def outputRoot = "${projectDir}/.nf-test/compatibility-record"
 
@@ -410,17 +458,18 @@ nextflow_pipeline {
         }
     }
 
-    test('reports that reference preparation is unavailable') {
+    test('rejects a download cache for reference preparation') {
         when {
             params {
                 delegate.setProperty('workflow', 'prepare_reference_bundle')
                 outdir = 'unused-output-root'
+                download_cache = 'unused-download-cache'
             }
         }
 
         then {
             assert workflow.failed
-            assert workflow.stdout.any { line -> line.contains("Workflow 'prepare_reference_bundle' is not implemented") }
+            assert workflow.stdout.any { line -> line.contains('Parameter --download_cache is not valid for --workflow prepare_reference_bundle') }
         }
     }
 

@@ -289,6 +289,26 @@ annotation assets, including those used by `prepare_knowledge_bundle`; their
 selection and release remain open. Required indexes will be defined when their
 dependent analysis components are approved.
 
+### Initial executable reference-bundle boundary
+
+The current `prepare_reference_bundle` path implements only the pinned default
+source FASTA and exclusions BED above. It does not yet provide durable download
+caching; cache location, collision, and resume behavior remain open.
+`--reference_spec` is not yet supported.
+
+The reference bundle root is `reference/` beneath `--outdir`. It contains
+`manifest.json` and
+`fasta/GCA_000001405.15_GRCh38_no_alt_analysis_set.masked.fna`. The manifest
+declares bundle ID `oncohawk-reference-hg38-beta-1`, the source URLs and
+verified MD5 values, the masking transformation, and the derived FASTA SHA-256.
+This initial ID must change whenever the bundle contents change.
+
+The implementation downloads with a pinned nf-core WGET module, verifies both
+source MD5 values, decompresses the source FASTA, and applies the exclusions
+BED with `bedtools maskfasta`. BED intervals use standard zero-based, half-open
+semantics. Annotation assets and indexes are not represented by this initial
+bundle and remain open rather than being represented by placeholder fields.
+
 ## Variant and MVP reporting boundary
 
 The target contract requires genome-wide calling of single-nucleotide variants

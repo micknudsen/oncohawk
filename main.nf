@@ -1,6 +1,7 @@
 nextflow.enable.dsl=2
 
 include { VALIDATE_SAMPLESHEET } from './subworkflows/local/validate_samplesheet'
+include { PREPARE_REFERENCE_BUNDLE } from './subworkflows/local/prepare_reference_bundle'
 
 def requireValue(String name, Object value) {
     if( value == null || value.toString().trim().isEmpty() ) {
@@ -26,12 +27,21 @@ def validateWorkflowParameters() {
     selectedParameters.required.each { parameter -> requireValue(parameter, params[parameter]) }
 
     def allowedParameters = (selectedParameters.required + selectedParameters.optional) as Set
-    def modeSpecificParameters = ['input', 'reference_bundle', 'knowledge_bundle', 'reference_spec', 'knowledge_spec']
+    def modeSpecificParameters = [
+        'input', 'reference_bundle', 'knowledge_bundle', 'reference_spec', 'knowledge_spec', 'download_cache',
+        'reference_fasta_url', 'reference_fasta_md5', 'reference_exclusions_url', 'reference_exclusions_md5'
+    ]
     modeSpecificParameters.findAll { parameter -> !allowedParameters.contains(parameter) && params[parameter] != null }.each { parameter ->
         error "Parameter --${parameter} is not valid for --workflow ${selectedWorkflow}"
     }
 
     selectedWorkflow
+}
+
+def validateReferenceBundleParameters() {
+    if( params.reference_spec != null ) {
+        error 'Parameter --reference_spec is not yet supported for --workflow prepare_reference_bundle'
+    }
 }
 
 def readBundleManifest(String parameter, Object bundleRoot) {
@@ -123,6 +133,10 @@ workflow {
                 writeBundleCompatibilityRecord(compatibility)
                 records
             }
+    }
+    else if( selectedWorkflow == 'prepare_reference_bundle' ) {
+        validateReferenceBundleParameters()
+        PREPARE_REFERENCE_BUNDLE()
     }
     else {
         error "Workflow '${selectedWorkflow}' is not implemented"
