@@ -313,6 +313,14 @@ BED with `bedtools maskfasta`. BED intervals use standard zero-based, half-open
 semantics. Annotation assets and indexes are not represented by this initial
 bundle and remain open rather than being represented by placeholder fields.
 
+### Initial executable knowledge-bundle boundary
+
+The current `prepare_knowledge_bundle` path validates that `--reference_bundle`
+is a local bundle root with a parseable `manifest.json`, schema version `1`, and
+a non-empty string `bundle_id`. It then stops with an unimplemented-workflow
+error. It does not yet create a knowledge bundle, interpret a knowledge
+specification, or select annotation assets.
+
 ## Variant and MVP reporting boundary
 
 The target contract requires genome-wide calling of single-nucleotide variants
