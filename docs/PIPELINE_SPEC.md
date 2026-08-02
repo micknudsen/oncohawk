@@ -48,15 +48,15 @@ The reference bundle must expose its identity and provenance for its source
 genome, exclusions BED, annotation assets, masking transformation, and derived
 masked-reference checksum through its manifest.
 
-`prepare_knowledge_bundle` selects a human-readable,
-clinician-oriented knowledge specification and a reference bundle. It uses
+`prepare_knowledge_bundle` selects a JSON, clinician-oriented knowledge
+specification and a reference bundle. It uses
 reference-bundle annotation assets, for example a GENCODE GTF, to produce a
 versioned, machine-consumable knowledge bundle. The knowledge bundle must
 declare the identity of the reference bundle from which it is prepared. The
 knowledge bundle must also expose its own identity and the identity of its
-approved human-readable knowledge specification. It does not duplicate the
-individual curated-resource provenance of that specification. The authoring
-format and translation semantics remain open.
+approved JSON knowledge specification. It does not duplicate the
+individual curated-resource provenance of that specification. Translation
+semantics remain open.
 
 The knowledge-bundle root contains a machine-readable `manifest.json` with its
 opaque, producer-assigned `bundle_id` and a `source_reference_bundle_id`. The
@@ -75,7 +75,7 @@ duplicated in the analysis output set. The record is a separate
 `knowledge_bundle_id`, and `knowledge_source_reference_bundle_id` string
 fields.
 
-The human-readable knowledge specification, compiled knowledge bundle, and
+The JSON knowledge specification, compiled knowledge bundle, and
 final clinician-readable report are distinct artifacts.
 
 ## Top-level workflow-dispatch contract
@@ -110,7 +110,7 @@ their validation requirements; the workflow downloads those assets. Source
 locations and download mechanics remain open.
 
 For `prepare_knowledge_bundle`, `--knowledge_spec` is a path to a local custom
-human-readable knowledge specification. When it is omitted, the workflow uses
+JSON knowledge specification. When it is omitted, the workflow uses
 the default knowledge specification versioned with the selected OncoHawk
 release. `--reference_bundle` identifies the reference bundle against which
 the selected knowledge specification is prepared.
@@ -321,6 +321,156 @@ a non-empty string `bundle_id`. It then stops with an unimplemented-workflow
 error. It does not yet create a knowledge bundle, interpret a knowledge
 specification, or select annotation assets.
 
+### Knowledge-specification contract
+
+This target contract defines the initial JSON knowledge-specification format.
+It does not describe implemented knowledge-bundle behavior. A knowledge
+specification has `schema_version` `1`, a non-empty opaque
+`knowledge_spec_id`, and an ordered `rules` array. The resulting
+knowledge-bundle manifest records `source_knowledge_spec_id`, in addition to
+the knowledge-bundle identity and source-reference-bundle identity already
+required above. A knowledge bundle contains compiled VCF, BED, and BEDPE
+artifacts.
+
+The supplied reference bundle is the single source of truth for assembly,
+contig naming, and annotation identity. A knowledge specification does not
+repeat those values or declare an expected reference-bundle identity. A future
+bundle-preparation implementation must resolve its declarations only against
+the supplied reference bundle and its annotation assets, and must fail when
+those assets cannot support a declared target.
+
+Each rule has a unique `rule_id` matching `[A-Za-z][A-Za-z0-9_.-]*` and one of
+these `rule_kind` values:
+
+- `gene_variant_target`, with a required `gene` and `target`;
+- `hotspot_variant`, with a required `gene` and non-empty `variants` array;
+- `intragenic_event`, with a required `gene`, non-empty human-readable
+  `event_label`, and required `target`; or
+- `gene_fusion`, with required `gene_5prime` and `gene_3prime`.
+
+Every `gene`, `gene_5prime`, and `gene_3prime` value is an object with required
+non-empty `hgnc_id` and `symbol` strings. The HGNC identifier is authoritative;
+the symbol is a human-readable display and checking value. Future preparation
+must use a pinned gene-identifier mapping to resolve the HGNC identifier
+against the supplied reference-bundle annotation and must fail on an
+unresolvable or inconsistent identifier. Unknown `rule_kind` values are invalid
+in schema version `1`; a later schema version may add an explicitly defined
+rule kind.
+
+Each `hotspot_variant` rule has one or more exact transcript-based declarations:
+
+```json
+{
+  "rule_id": "IDH1_R132",
+  "rule_kind": "hotspot_variant",
+  "gene": {
+    "hgnc_id": "HGNC:5382",
+    "symbol": "IDH1"
+  },
+  "variants": [
+    {
+      "transcript_id": "NM_002168.4",
+      "hgvs_c": "c.419G>A"
+    }
+  ]
+}
+```
+
+Every declaration has a versioned `transcript_id` and non-empty `hgvs_c` value.
+Future preparation resolves each declaration against the supplied reference
+bundle to produce a normalized, reference-backed VCF record. One rule may
+therefore represent multiple exact alleles at one hotspot. Every derived VCF
+record carries the shared `rule_id`. A hotspot variant does not have a `target`
+and does not produce a BED interval.
+
+When present, a `target` has exactly one of two forms. Both forms may contain
+an optional non-negative integer `padding`, which represents symmetric genomic
+bases to apply around the target only when it is later resolved.
+
+```json
+{
+  "kind": "transcript_exons",
+  "transcript_id": "NM_004119.3",
+  "exons": [14, 15],
+  "padding": 10
+}
+```
+
+A `transcript_exons` target requires a versioned `transcript_id`. Its optional
+`exons` field is a non-empty list of unique positive exon numbers. When
+`exons` is omitted, the target selects the annotated CDS portions of every
+exon in that transcript and excludes UTR sequence. When it is present, it
+selects the CDS portions of the listed exons. Transcript accession resolution,
+exon numbering, CDS boundaries, strand, padding expansion, and overlap
+handling are deferred to annotation-aware preparation.
+
+```json
+{
+  "kind": "genomic_interval",
+  "contig": "chr13",
+  "start": 28000000,
+  "end": 28001000,
+  "padding": 10
+}
+```
+
+A `genomic_interval` target requires a non-empty `contig` and non-negative
+integer `start` and `end` values with `end` greater than `start`. Its
+coordinates use the schema-defined `0-based-half-open` convention and the
+contig naming of the supplied reference bundle. The author writes the intended
+interval directly; `padding` is local to this target and is not a global
+setting.
+
+### Compiled knowledge-bundle artifacts
+
+Future `prepare_knowledge_bundle` implementation compiles its validated rules
+against the supplied reference bundle. It always creates these bgzip-compressed
+and tabix-indexed artifacts, including valid empty artifacts when no matching
+rules are declared:
+
+- `hotspot-variants.vcf.gz` and its `.tbi` index;
+- `regions/gene-variant-targets.bed.gz` and its `.tbi` index; and
+- `gene-fusions.bedpe.gz` and its `.tbi` index.
+
+`hotspot-variants.vcf.gz` contains the reference-backed VCF records derived
+from `hotspot_variant` rules for manual force calling or base counting. Each
+record has an `INFO/RULE_ID` value. A record may list multiple rule identifiers
+when it is derived from multiple rules.
+
+`regions/gene-variant-targets.bed.gz` contains the resolved target intervals
+from all `gene_variant_target` rules. It is BED6: column 4 is `rule_id` and
+column 6 is the annotation strand, or `.` for a `genomic_interval` target.
+These intervals are the general gene-variant targets; intragenic-event targets
+are deliberately excluded from this file.
+
+Every `intragenic_event` rule produces its own bgzip-compressed, tabix-indexed
+BED6 file at `regions/intragenic-events/<rule_id>.bed.gz`, with an associated
+`.tbi` index. This lets a dedicated event task, such as an FLT3-ITD or
+KMT2A-PTD task, consume only its own target interval rather than the general
+gene-variant target set.
+
+`gene-fusions.bedpe.gz` contains one canonical BEDPE record for every
+`gene_fusion` rule. It uses the complete annotated gene-feature span of
+`gene_5prime` as BEDPE end 1 and `gene_3prime` as BEDPE end 2. Column 7 is
+`rule_id`; columns 9 and 10 are the annotation strands of the 5-prime and
+3-prime partners, respectively. The partner roles are biological roles:
+`TMPRSS2::ERG` and `ERG::TMPRSS2` are distinct rules. They are not inferred
+from genomic coordinate order, gene strand, or a caller BND endpoint order. A
+future fusion-matching implementation must compare either caller endpoint
+permutation to this one canonical directional rule.
+
+The manifest lists every emitted artifact with its relative path, SHA-256,
+format, purpose, and associated `rule_id` when applicable. These checksums and
+paths are part of the knowledge-bundle contents and identity.
+
+The first preparation implementation must validate required values, unique rule
+identifiers, permitted rule and target forms, gene-reference shape,
+hotspot-declaration shape, exon-list shape, padding shape, and interval
+ordering. Coordinate resolution, HGNC and annotation resolution, CDS
+selection, padding expansion, VCF normalization, artifact compilation, and
+caller-level matching are target requirements; they are not implemented by the
+current executable path.
+
 ## Variant and MVP reporting boundary
 
 The target contract requires genome-wide calling of single-nucleotide variants
@@ -441,14 +591,18 @@ This document does not yet decide:
 - analytical methods, tools, or caller-specific representations;
 - the contents, evidence hierarchy, source provenance, release process, or
   retirement process for curated resources;
-- annotation assets and releases, or transcript requirements;
-- the knowledge-specification authoring format;
-- translation semantics for transcript exon rules, including genome build,
-  annotation release, transcript accession/version, exon semantics, and strand;
-- fusion-rule translation to BEDPE or another representation;
+- annotation assets, releases, and HGNC identifier mapping needed in reference
+  bundles to resolve transcript targets and gene references;
+- translation semantics for transcript exon rules, including transcript
+  accession/version resolution, exon semantics, strand, padding expansion, and
+  overlap handling;
+- coordinate-resolution and VCF-normalization implementation for hotspot
+  declarations;
+- fusion breakpoint-matching semantics beyond the directional rule and
+  endpoint-permutation requirement;
 - bundle identifier and versioning schemes, manifest fields beyond the
-  required identities, checksums beyond the existing source and masked-
-  reference requirements, directory layout, or exact tool/index contents;
+  required identities and compiled-artifact checksums, or exact tool/index
+  contents;
 - source locations and download mechanics for default bundle specifications;
 - the layout of a workflow output set, including existing-output-directory
   behavior;
