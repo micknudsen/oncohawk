@@ -72,6 +72,19 @@ def requireManifestIdentity(String parameter, Object manifest, String field) {
     value
 }
 
+def requireManifestSchemaVersion(String parameter, Object manifest) {
+    def value = manifest instanceof Map ? manifest['schema_version'] : null
+    if( value != 1 ) {
+        error "Invalid --${parameter}: manifest.json requires schema_version 1"
+    }
+}
+
+def validateKnowledgePreparationReferenceBundle() {
+    def referenceManifest = readBundleManifest('reference_bundle', params.reference_bundle)
+    requireManifestSchemaVersion('reference_bundle', referenceManifest)
+    requireManifestIdentity('reference_bundle', referenceManifest, 'bundle_id')
+}
+
 def validateAnalyzeBundleCompatibility() {
     def referenceManifest = readBundleManifest('reference_bundle', params.reference_bundle)
     def knowledgeManifest = readBundleManifest('knowledge_bundle', params.knowledge_bundle)
@@ -139,6 +152,7 @@ workflow {
         PREPARE_REFERENCE_BUNDLE()
     }
     else {
+        validateKnowledgePreparationReferenceBundle()
         error "Workflow '${selectedWorkflow}' is not implemented"
     }
 }

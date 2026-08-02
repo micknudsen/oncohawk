@@ -498,13 +498,77 @@ nextflow_pipeline {
             params {
                 delegate.setProperty('workflow', 'prepare_knowledge_bundle')
                 outdir = 'unused-output-root'
-                reference_bundle = 'reference-bundle'
+                reference_bundle = "${projectDir}/tests/fixtures/bundles/reference-matching"
             }
         }
 
         then {
             assert workflow.failed
             assert workflow.stdout.any { line -> line.contains("Workflow 'prepare_knowledge_bundle' is not implemented") }
+        }
+    }
+
+    test('rejects a knowledge-preparation reference bundle with an unsupported schema version') {
+        when {
+            params {
+                delegate.setProperty('workflow', 'prepare_knowledge_bundle')
+                outdir = 'unused-output-root'
+                reference_bundle = "${projectDir}/tests/fixtures/bundles/reference-invalid-schema"
+            }
+        }
+
+        then {
+            assert workflow.failed
+            assert workflow.stdout.any { line -> line.contains('Invalid --reference_bundle: manifest.json requires schema_version 1') }
+            assert !workflow.stdout.any { line -> line.contains("Workflow 'prepare_knowledge_bundle' is not implemented") }
+        }
+    }
+
+    test('rejects a missing knowledge-preparation reference bundle directory') {
+        when {
+            params {
+                delegate.setProperty('workflow', 'prepare_knowledge_bundle')
+                outdir = 'unused-output-root'
+                reference_bundle = "${projectDir}/tests/fixtures/bundles/missing-reference"
+            }
+        }
+
+        then {
+            assert workflow.failed
+            assert workflow.stdout.any { line -> line.contains('Invalid --reference_bundle: expected a local bundle-root directory') }
+            assert !workflow.stdout.any { line -> line.contains("Workflow 'prepare_knowledge_bundle' is not implemented") }
+        }
+    }
+
+    test('rejects a malformed knowledge-preparation reference bundle manifest') {
+        when {
+            params {
+                delegate.setProperty('workflow', 'prepare_knowledge_bundle')
+                outdir = 'unused-output-root'
+                reference_bundle = "${projectDir}/tests/fixtures/bundles/reference-malformed"
+            }
+        }
+
+        then {
+            assert workflow.failed
+            assert workflow.stdout.any { line -> line.contains('Invalid --reference_bundle: malformed manifest.json') }
+            assert !workflow.stdout.any { line -> line.contains("Workflow 'prepare_knowledge_bundle' is not implemented") }
+        }
+    }
+
+    test('rejects a knowledge-preparation reference bundle without an identity') {
+        when {
+            params {
+                delegate.setProperty('workflow', 'prepare_knowledge_bundle')
+                outdir = 'unused-output-root'
+                reference_bundle = "${projectDir}/tests/fixtures/bundles/reference-invalid-id"
+            }
+        }
+
+        then {
+            assert workflow.failed
+            assert workflow.stdout.any { line -> line.contains('Invalid --reference_bundle: manifest.json requires a non-empty string bundle_id') }
+            assert !workflow.stdout.any { line -> line.contains("Workflow 'prepare_knowledge_bundle' is not implemented") }
         }
     }
 
