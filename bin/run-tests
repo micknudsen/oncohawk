@@ -34,6 +34,20 @@ export NXF_HOME="${tool_cache}/nextflow-home"
 export PATH="${tool_cache}:${PATH}"
 export NXF_OPTS="${NXF_OPTS:--XX:ActiveProcessorCount=1 -XX:ParallelGCThreads=1 -XX:ConcGCThreads=1}"
 
-"${nextflow_bin}" lint main.nf subworkflows/local/validate_samplesheet.nf
+mapfile -t local_workflow_sources < <(find subworkflows/local -type f -name '*.nf' -print | sort)
+lint_report="$(mktemp)"
+trap 'rm -f "${lint_report}"' EXIT
+
+if ! "${nextflow_bin}" lint -output json main.nf "${local_workflow_sources[@]}" > "${lint_report}"; then
+    cat "${lint_report}" >&2
+    exit 1
+fi
+
+cat "${lint_report}"
+if grep -Eq '"(errors|warnings)": [1-9][0-9]*,' "${lint_report}"; then
+    printf 'Native Nextflow lint reported warnings or errors\n' >&2
+    exit 1
+fi
+
 "${nf_test_bin}" version | grep -F "nf-test ${nf_test_version}" >/dev/null
 "${nf_test_bin}" test

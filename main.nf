@@ -140,7 +140,7 @@ workflow {
 
     if( selectedWorkflow == 'analyze' ) {
         def compatibility = validateAnalyzeBundleCompatibility()
-        VALIDATE_SAMPLESHEET(params.input).records
+        VALIDATE_SAMPLESHEET(params.input)
             .collect()
             .map { records ->
                 writeBundleCompatibilityRecord(compatibility)

@@ -233,9 +233,6 @@ workflow VALIDATE_SAMPLESHEET {
     take:
     sample_sheet
 
-    main:
-    normalized_records = channel.fromPath(sample_sheet).map { path -> validateSamplesheet(path) }.flatMap { record -> record }
-
     emit:
-    records = normalized_records
+    channel.fromPath(sample_sheet).map { path -> validateSamplesheet(path) }.flatMap { record -> record }
 }
