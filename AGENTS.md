@@ -124,6 +124,26 @@ Pull request titles and bodies must contain only the change summary, rationale,
 impact, verification, and relevant risks. They must not include approval gates,
 later-permission requirements, or workflow instructions.
 
+### GitHub Markdown body handling
+
+For every external GitHub Markdown body—issue and pull-request creation or
+editing, and issue or pull-request comments—preserve the Markdown literally.
+With `gh`, send a multiline body using `--body-file -` and a single-quoted
+heredoc; do not use an inline `--body` argument. For example:
+
+```bash
+gh issue create --title 'Example' --body-file - <<'EOF'
+## Summary
+
+Literal Markdown, including `code`, is preserved.
+EOF
+```
+
+When using another GitHub client, use an equivalent literal file, standard-input,
+or structured-payload mechanism rather than shell-interpolated Markdown. After
+every Markdown write, retrieve and inspect the raw stored body with the relevant
+GitHub CLI or API query before reporting that write as complete.
+
 ### Standing post-merge cleanup authorization
 
 When the owner explicitly states that a pull request has been merged, that
