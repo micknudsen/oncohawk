@@ -135,6 +135,92 @@ parameters.
 The `--workflow` selector and these parameter boundaries are target-contract
 requirements, not implemented behavior.
 
+## JSON specification contracts
+
+This section defines target contracts for selected JSON reference and knowledge
+specifications. It does not add a bundled default specification, custom-spec
+runtime support, or validation to the current executable workflows.
+
+Every v1 specification has this shared top-level envelope:
+
+```json
+{
+  "schema_version": 1,
+  "spec_id": "producer-assigned-identifier"
+}
+```
+
+`schema_version` is the JSON number `1`. `spec_id` is a non-empty opaque
+string; consumers compare it by exact string equality and do not interpret its
+contents. A compiler calculates the selected specification's SHA-256 from the
+exact bytes of the selected JSON file. It must not hash a parsed, reformatted,
+or otherwise normalized representation. Wherever a specification checksum is
+recorded, it is a lowercase 64-character hexadecimal SHA-256 string.
+
+A compiled reference-bundle manifest records the selected specification as:
+
+```json
+"source_reference_spec": {
+  "spec_id": "producer-assigned-identifier",
+  "sha256": "lowercase-64-character-hexadecimal-sha256"
+}
+```
+
+A compiled knowledge-bundle manifest uses the analogous
+`source_knowledge_spec` object. Each object contains exactly its non-empty
+`spec_id` and the checksum of the exact selected JSON file bytes. These source
+objects are required provenance for future compiled bundles; they do not alter
+the identity or compatibility fields of the current executable bundle
+manifests.
+
+### Reference specification v1
+
+A reference specification has exactly these top-level fields:
+
+```json
+{
+  "schema_version": 1,
+  "spec_id": "producer-assigned-specification-identifier",
+  "bundle_id": "producer-assigned-bundle-identifier",
+  "assembly": "assembly-identifier",
+  "contig_naming": "contig-naming-identifier",
+  "source_fasta": {
+    "filename": "source.fna.gz",
+    "url": "https://example.invalid/source.fna.gz",
+    "md5": "00000000000000000000000000000000"
+  },
+  "exclusions_bed": {
+    "filename": "exclusions.bed",
+    "url": "https://example.invalid/exclusions.bed",
+    "md5": "00000000000000000000000000000000"
+  }
+}
+```
+
+`bundle_id`, `assembly`, and `contig_naming` are non-empty strings. `bundle_id`
+is opaque and may equal `spec_id`. Each source-asset object has exactly
+`filename`, `url`, and `md5`: `filename` is a filename only (not a path),
+`url` is an absolute HTTPS URL, and `md5` is a lowercase 32-character
+hexadecimal string. Unknown fields are invalid at every level of reference
+specification v1, including the envelope and both source-asset objects.
+
+### Knowledge specification v1
+
+A knowledge specification has exactly these top-level fields:
+
+```json
+{
+  "schema_version": 1,
+  "spec_id": "producer-assigned-specification-identifier",
+  "knowledge": {}
+}
+```
+
+`knowledge` must be present. Its contents are intentionally unvalidated in
+v1: this contract neither constrains nested fields nor defines their
+translation into knowledge-bundle artifacts. The strict top-level boundary
+preserves the option to define that payload in a later approved contract.
+
 ## Analyze output-set boundary
 
 The current executable `analyze` path writes its run-level compatibility
@@ -323,153 +409,18 @@ specification, or select annotation assets.
 
 ### Knowledge-specification contract
 
-This target contract defines the initial JSON knowledge-specification format.
-It does not describe implemented knowledge-bundle behavior. A knowledge
-specification has `schema_version` `1`, a non-empty opaque
-`knowledge_spec_id`, and an ordered `rules` array. The resulting
-knowledge-bundle manifest records `source_knowledge_spec_id`, in addition to
-the knowledge-bundle identity and source-reference-bundle identity already
-required above. A knowledge bundle contains compiled VCF, BED, and BEDPE
-artifacts.
-
-The supplied reference bundle is the single source of truth for assembly,
-contig naming, and annotation identity. A knowledge specification does not
-repeat those values or declare an expected reference-bundle identity. A future
-bundle-preparation implementation must resolve its declarations only against
-the supplied reference bundle and its annotation assets, and must fail when
-those assets cannot support a declared target.
-
-Each rule has a unique `rule_id` matching `[A-Za-z][A-Za-z0-9_.-]*` and one of
-these `rule_kind` values:
-
-- `gene_variant_target`, with a required `gene` and `target`;
-- `hotspot_variant`, with a required `gene` and non-empty `variants` array;
-- `intragenic_event`, with a required `gene`, non-empty human-readable
-  `event_label`, and required `target`; or
-- `gene_fusion`, with required `gene_5prime` and `gene_3prime`.
-
-Every `gene`, `gene_5prime`, and `gene_3prime` value is an object with required
-non-empty `hgnc_id` and `symbol` strings. The HGNC identifier is authoritative;
-the symbol is a human-readable display and checking value. Future preparation
-must use a pinned gene-identifier mapping to resolve the HGNC identifier
-against the supplied reference-bundle annotation and must fail on an
-unresolvable or inconsistent identifier. Unknown `rule_kind` values are invalid
-in schema version `1`; a later schema version may add an explicitly defined
-rule kind.
-
-Each `hotspot_variant` rule has one or more exact transcript-based declarations:
-
-```json
-{
-  "rule_id": "IDH1_R132",
-  "rule_kind": "hotspot_variant",
-  "gene": {
-    "hgnc_id": "HGNC:5382",
-    "symbol": "IDH1"
-  },
-  "variants": [
-    {
-      "transcript_id": "NM_002168.4",
-      "hgvs_c": "c.419G>A"
-    }
-  ]
-}
-```
-
-Every declaration has a versioned `transcript_id` and non-empty `hgvs_c` value.
-Future preparation resolves each declaration against the supplied reference
-bundle to produce a normalized, reference-backed VCF record. One rule may
-therefore represent multiple exact alleles at one hotspot. Every derived VCF
-record carries the shared `rule_id`. A hotspot variant does not have a `target`
-and does not produce a BED interval.
-
-When present, a `target` has exactly one of two forms. Both forms may contain
-an optional non-negative integer `padding`, which represents symmetric genomic
-bases to apply around the target only when it is later resolved.
-
-```json
-{
-  "kind": "transcript_exons",
-  "transcript_id": "NM_004119.3",
-  "exons": [14, 15],
-  "padding": 10
-}
-```
-
-A `transcript_exons` target requires a versioned `transcript_id`. Its optional
-`exons` field is a non-empty list of unique positive exon numbers. When
-`exons` is omitted, the target selects the annotated CDS portions of every
-exon in that transcript and excludes UTR sequence. When it is present, it
-selects the CDS portions of the listed exons. Transcript accession resolution,
-exon numbering, CDS boundaries, strand, padding expansion, and overlap
-handling are deferred to annotation-aware preparation.
-
-```json
-{
-  "kind": "genomic_interval",
-  "contig": "chr13",
-  "start": 28000000,
-  "end": 28001000,
-  "padding": 10
-}
-```
-
-A `genomic_interval` target requires a non-empty `contig` and non-negative
-integer `start` and `end` values with `end` greater than `start`. Its
-coordinates use the schema-defined `0-based-half-open` convention and the
-contig naming of the supplied reference bundle. The author writes the intended
-interval directly; `padding` is local to this target and is not a global
-setting.
+The v1 knowledge-specification contract is defined in
+[JSON specification contracts](#json-specification-contracts). It does not
+describe implemented knowledge-bundle behavior or a schema for the nested
+`knowledge` payload. The supplied reference bundle remains the single source
+of truth for assembly, contig naming, and annotation identity. Any future
+payload contract and translation behavior require separate approval.
 
 ### Compiled knowledge-bundle artifacts
 
-Future `prepare_knowledge_bundle` implementation compiles its validated rules
-against the supplied reference bundle. It always creates these bgzip-compressed
-and tabix-indexed artifacts, including valid empty artifacts when no matching
-rules are declared:
-
-- `hotspot-variants.vcf.gz` and its `.tbi` index;
-- `regions/gene-variant-targets.bed.gz` and its `.tbi` index; and
-- `gene-fusions.bedpe.gz` and its `.tbi` index.
-
-`hotspot-variants.vcf.gz` contains the reference-backed VCF records derived
-from `hotspot_variant` rules for manual force calling or base counting. Each
-record has an `INFO/RULE_ID` value. A record may list multiple rule identifiers
-when it is derived from multiple rules.
-
-`regions/gene-variant-targets.bed.gz` contains the resolved target intervals
-from all `gene_variant_target` rules. It is BED6: column 4 is `rule_id` and
-column 6 is the annotation strand, or `.` for a `genomic_interval` target.
-These intervals are the general gene-variant targets; intragenic-event targets
-are deliberately excluded from this file.
-
-Every `intragenic_event` rule produces its own bgzip-compressed, tabix-indexed
-BED6 file at `regions/intragenic-events/<rule_id>.bed.gz`, with an associated
-`.tbi` index. This lets a dedicated event task, such as an FLT3-ITD or
-KMT2A-PTD task, consume only its own target interval rather than the general
-gene-variant target set.
-
-`gene-fusions.bedpe.gz` contains one canonical BEDPE record for every
-`gene_fusion` rule. It uses the complete annotated gene-feature span of
-`gene_5prime` as BEDPE end 1 and `gene_3prime` as BEDPE end 2. Column 7 is
-`rule_id`; columns 9 and 10 are the annotation strands of the 5-prime and
-3-prime partners, respectively. The partner roles are biological roles:
-`TMPRSS2::ERG` and `ERG::TMPRSS2` are distinct rules. They are not inferred
-from genomic coordinate order, gene strand, or a caller BND endpoint order. A
-future fusion-matching implementation must compare either caller endpoint
-permutation to this one canonical directional rule.
-
-The manifest lists every emitted artifact with its relative path, SHA-256,
-format, purpose, and associated `rule_id` when applicable. These checksums and
-paths are part of the knowledge-bundle contents and identity.
-
-The first preparation implementation must validate required values, unique rule
-identifiers, permitted rule and target forms, gene-reference shape,
-hotspot-declaration shape, exon-list shape, padding shape, and interval
-ordering. Coordinate resolution, HGNC and annotation resolution, CDS
-selection, padding expansion, VCF normalization, artifact compilation, and
-caller-level matching are target requirements; they are not implemented by the
-current executable path.
+The artifacts, payload translation behavior, and validation requirements of a
+future compiled knowledge bundle remain open. Their definition is not implied
+by the v1 envelope or its manifest provenance fields.
 
 ## Variant and MVP reporting boundary
 
