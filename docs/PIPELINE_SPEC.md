@@ -169,9 +169,9 @@ A compiled reference-bundle manifest records the selected specification as:
 A compiled knowledge-bundle manifest uses the analogous
 `source_knowledge_spec` object. Each object contains exactly its non-empty
 `spec_id` and the checksum of the exact selected JSON file bytes. These source
-objects are required provenance for future compiled bundles; they do not alter
-the identity or compatibility fields of the current executable bundle
-manifests.
+objects are required provenance for compiled bundles. They do not participate
+in bundle-compatibility determination, which remains based on the bundle
+identity fields defined for the reference and knowledge bundles.
 
 ### Reference specification v1
 
@@ -418,9 +418,48 @@ payload contract and translation behavior require separate approval.
 
 ### Compiled knowledge-bundle artifacts
 
-The artifacts, payload translation behavior, and validation requirements of a
-future compiled knowledge bundle remain open. Their definition is not implied
-by the v1 envelope or its manifest provenance fields.
+A compiled knowledge bundle has one required canonical artifact at
+`knowledge/compiled-knowledge.json`, relative to the bundle root. The artifact
+must be a valid JSON document. Its nested payload schema and the translation
+semantics that produce it remain open; this artifact boundary does not define
+curated-resource contents, matching rules, or report-inclusion logic.
+
+The compiled knowledge-bundle root contains a machine-readable `manifest.json`
+with schema version `1`. In addition to its non-empty opaque `bundle_id` and
+non-empty `source_reference_bundle_id`, it records the selected knowledge
+specification and the required artifact attestation:
+
+```json
+{
+  "schema_version": 1,
+  "bundle_id": "producer-assigned-bundle-identifier",
+  "source_reference_bundle_id": "producer-assigned-reference-bundle-identifier",
+  "source_knowledge_spec": {
+    "spec_id": "producer-assigned-specification-identifier",
+    "sha256": "lowercase-64-character-hexadecimal-sha256"
+  },
+  "artifacts": {
+    "compiled_knowledge": {
+      "path": "knowledge/compiled-knowledge.json",
+      "sha256": "lowercase-64-character-hexadecimal-sha256"
+    }
+  }
+}
+```
+
+`source_knowledge_spec` contains exactly the `spec_id` and `sha256` fields
+defined in [JSON specification contracts](#json-specification-contracts).
+`artifacts` contains exactly the `compiled_knowledge` entry. That entry
+contains exactly `path` and `sha256`: `path` must be the literal canonical
+relative path above, and `sha256` is the lowercase 64-character hexadecimal
+SHA-256 of the exact artifact bytes. Consumers must reject a knowledge bundle
+when any required manifest field is absent or invalid, the artifact is absent
+or is not valid JSON, or its exact-byte checksum differs from the manifest.
+
+This contract does not yet require a reference bundle to contain annotation
+assets beyond the current minimal manifest boundary. Annotation-asset identity,
+provenance, selection, and use during knowledge translation remain open and
+require separate approval.
 
 ## Variant and MVP reporting boundary
 
