@@ -1,6 +1,6 @@
 # Oncohawk
 
-Oncohawk is a Nextflow workflow for tumor-only short-read DNA WGS analysis. It prepares a reusable **reference bundle** and aligns one gzipped FASTQ pair to produce a coordinate-sorted, indexed BAM with duplicates marked and retained. This alignment slice supports one sample, library, and read group; adapter settings and multiple inputs belong to later slices. Downstream analysis remains deferred.
+Oncohawk is a Nextflow workflow for tumor-only short-read DNA WGS analysis. It prepares a reusable **reference bundle** and aligns one gzipped FASTQ pair to produce a coordinate-sorted, indexed BAM with duplicates marked and retained. This alignment slice supports one sample, library, and read group, with optional per-mate adapter settings; multiple inputs belong to a later slice. Downstream analysis remains deferred.
 
 Use Nextflow **26.10.4**, Java **21.0.13+9**, Python **3.12** for tests, and a running Docker installation for local development. Containers supply the bioinformatics tools; Conda execution is unsupported. The [reference-bundle guide](docs/reference-bundle.md) and [alignment guide](docs/alignment.md) describe inputs, outputs, runtime pins, and production use.
 

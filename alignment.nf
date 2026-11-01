@@ -3,6 +3,26 @@ include { BWAMEM2_MEM } from './modules/nf-core/bwamem2/mem/main'
 include { PICARD_MARKDUPLICATES } from './modules/nf-core/picard/markduplicates/main'
 include { SAMTOOLS_INDEX } from './modules/nf-core/samtools/index/main'
 
+def inputOptions(value) {
+    def options = [:]
+    if (!value?.trim())
+        return options
+    value.split(';', -1).each { entry ->
+        def parts = entry.split('=', -1).collect { it.trim() }
+        if (parts.size() != 2 || !parts[0] || !parts[1])
+            error('Sample-sheet row 2: malformed options; expected nonempty key=value entries')
+        def (key, sequence) = parts
+        if (!(key in ['r1_adapter', 'r2_adapter']))
+            error("Sample-sheet row 2: unknown option '${key}'")
+        if (options.containsKey(key))
+            error("Sample-sheet row 2: repeated option '${key}'")
+        if (!(sequence ==~ /(?i)[ACGTRYSWKMBDHVN]+/))
+            error("Sample-sheet row 2: ${key} must be a DNA IUPAC sequence")
+        options[key] = sequence.toUpperCase()
+    }
+    return options
+}
+
 def fastqInput(value, sheet, field) {
     if (!value?.trim())
         error("Sample-sheet row 2: missing ${field}")
@@ -80,8 +100,7 @@ workflow {
                     error("Sample-sheet row 2: invalid ${field} identifier '${value}'")
                 row[field] = value
             }
-            if (row.options?.trim())
-                error('Unsupported input: nonblank options are not supported by this alignment slice')
+            def options = inputOptions(row.options)
             def identity = groovy.json.JsonOutput.toJson([row.sample, row.library, row.flowcell, row.lane])
                 .getBytes('UTF-8').encodeBase64().toString().replace('+', '-').replace('/', '_').replace('=', '')
             def platform_unit = "${row.flowcell.replace('.', '%2E')}.${row.lane.replace('.', '%2E')}"
@@ -91,7 +110,8 @@ workflow {
                 error('Sample-sheet row 2: R1 and R2 must be distinct files')
             if (reads[0].name == reads[1].name)
                 error('Sample-sheet row 2: R1 and R2 must have distinct basenames for staging')
-            [[id: 'input1', sample: row.sample, single_end: false, read_group: group],
+            [[id: 'input1', sample: row.sample, single_end: false, read_group: group,
+              r1_adapter: options.r1_adapter, r2_adapter: options.r2_adapter],
              reads]
         }
     CUTADAPT(inputs)
