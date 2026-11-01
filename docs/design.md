@@ -130,11 +130,17 @@ Primary sources checked on 2026-11-01: [bwa-mem2's options](https://github.com/b
 
 The user clarified that development takes place locally on a Mac using Docker and synthetic data; the Mac lacks memory for bwa-mem2 on the entire human reference. Production runs on a SLURM HPC with Apptainer. Recorded this directly in [requirements](requirements.md#execution-environments) and the [plan](implementation-plan.md#execution-environments), without reopening the interview.
 
-Local tests use a small synthetic reference, matching BED, and reads. Full NCBI reference preparation and full-reference validation run on the HPC. Workflow logic and upstream modules stay shared, with profiles and test inputs providing the environment/data differences. ARM64 container compatibility remains an early local check independent of the reduced-reference memory footprint.
+Local tests use a small synthetic reference, matching BED, and reads. Full NCBI reference preparation and alignment target the HPC. Workflow logic and upstream modules stay shared, with profiles and test inputs providing the environment/data differences. ARM64 container compatibility remains an early local check independent of the reduced-reference memory footprint.
 
 ## Testing-boundary confirmation — 2026-11-01
 
 During the explicitly requested to-spec synthesis, the user confirmed two public testing boundaries: reference inputs to a prepared reference bundle, and a prepared bundle plus sample sheet/FASTQs to final BAMs. Add one end-to-end composition test and assert observable outputs/errors rather than private helper structure. This confirms the testing approach without reopening the milestone interview or selecting implementation internals.
+
+## HPC acceptance clarification — 2026-11-01
+
+During ticket planning, the user specified that they will check SLURM/Apptainer operation informally along the way and report problems. HPC tests must never be formal acceptance criteria. Removed the proposed standalone HPC-verification ticket; production profiles and usage instructions belong to the reference-preparation and alignment slices.
+
+Formal workflow acceptance remains based on compact synthetic tests with Docker locally and in required CI. Do not wait for HPC access, results, or sign-off to complete tickets or the milestone. No reported HPC problem means no HPC blocker; record actual evidence accurately without calling silence a verified run. This clarification supersedes the earlier proposal for a required full-reference HPC verification run.
 
 ## Deferred
 
