@@ -1,0 +1,66 @@
+# Milestone 1 — reference preparation and alignment
+
+Proposed for review, 2026-11-01. The [accepted requirements](requirements.md) define scope; this document proposes implementation choices and checks. Pipeline implementation requires a separate instruction.
+
+Published specification: [milestone 1, issue #1](https://github.com/micknudsen/oncohawk/issues/1).
+
+## Deliverables
+
+Two runnable Nextflow entry points: reference preparation and alignment. Alignment is the first part of the future report-generation workflow. It consumes a prepared reference bundle and one sample sheet, producing one sorted, indexed, duplicate-marked BAM per sample, plus standard tool logs/metrics and version information. Knowledge compilation and everything downstream of alignment remain deferred.
+
+## Execution environments
+
+| Purpose | Environment | Data/reference |
+| --- | --- | --- |
+| Local development | Mac with Docker | Small synthetic FASTA, matching exclusion BED, and paired reads that fit local memory. |
+| Required CI | Containerized test runner | The same compact synthetic fixtures; no full-human-reference job. |
+| Production and full-reference verification | SLURM HPC with Apptainer | The selected NCBI reference bundle; modest synthetic reads for validation and production inputs for routine use. |
+
+Keep the workflow logic and pristine modules shared. Profiles configure the executor, container backend, resources, and filesystem settings. Full-human-reference preparation and alignment belong on the HPC; local tests use a small reference as well as small read sets.
+
+## Build sequence
+
+### 1. Establish the project and execution path
+
+Create a minimal Nextflow project, a local Docker profile, a production SLURM/Apptainer profile, and a compact synthetic reference/BED/read fixture. Install suitable nf-core modules through the CLI and pin compatible workflow, module, tool/container, and test-tool versions. Keep all changes outside upstream modules.
+
+Check actual Docker execution early on the Mac, including bwa-mem2 indexing and mapping on the tiny synthetic reference. This Mac reports ARM64; [bwa-mem2's upstream build](https://github.com/bwa-mem2/bwa-mem2/blob/master/Makefile) targets x86 SIMD. Successful execution on this Mac must be demonstrated before claiming local support. Set local resource/concurrency limits to fit available memory. Configure SLURM paths and resources for the production cluster; record which profiles were actually exercised.
+
+Use protected `master`, required GitHub Actions checks, squash-only merging, and linear history, with focused feature PRs for milestone changes. The empty repository's one-time bootstrap commit and documentation publication were separately authorized on 2026-11-01; subsequent changes enter `master` through PRs. Keep required checks appropriate to each stage and verify their enforcement as they evolve.
+
+### 2. Prepare the reference bundle
+
+Develop reference preparation locally against the small synthetic fixture. For the production bundle, acquire the exact NCBI FASTA and BED from Q2 and run decompression, exclusion masking, and bwa-mem2 indexing on the HPC with Apptainer. Use suitable upstream modules, including [gunzip](https://nf-co.re/modules/gunzip), `bedtools/maskfasta`, and `bwamem2/index`; acquisition and compatibility checks are routine implementation work.
+
+Inspect the actual BED against the selected FASTA. Distinguish intentionally absent ALT sequences from unexpected name/coordinate mismatches, recording any excluded BED entries. Publish the masked FASTA, alignment indexes, and a small provenance file with relative artifact paths, source URLs/checksums, and tool/module versions. Add further reference assets only when a milestone step needs them.
+
+### 3. Connect the sequencing-to-BAM path
+
+Propose CSV columns `sample,library,flowcell,lane,fastq_1,fastq_2,options`. Validate the accepted input/options rules and derive consistent read-group metadata. Keep task/file identities distinct from biological sample IDs; preserve read-group identity when combining rows and reject conflicting definitions.
+
+Compose the verified modules: shared `cutadapt` → `bwamem2/mem` with sorted BAM output → sample-level `samtools/merge` → `picard/markduplicates` → [samtools/index](https://github.com/nf-core/modules/blob/master/modules/nf-core/samtools/index/main.nf). Configure accepted options outside modules. Preserve library grouping and index the final duplicate-marked BAM. Use ordinary workflow failures for malformed inputs or failed tools; do not publish a failed task's output as a completed sample.
+
+### 4. Verify and document the usable path
+
+Run real reference-to-BAM tests locally with Docker and in required CI, using the compact synthetic reference/BED/read fixtures; production defaults remain the chosen NCBI assets. Separately, prepare the actual NCBI bundle and align a modest synthetic read set against it on the SLURM HPC with Apptainer. Record results, commands, versions, and untested execution environments. Provide a short README with local test and HPC preparation/alignment examples.
+
+## Acceptance checks
+
+The confirmed testing boundaries are the public reference-preparation and alignment interfaces, plus one end-to-end composition test. Observe results and input/tool errors through these interfaces rather than introducing public parser/helper seams.
+
+| Area | Evidence required |
+| --- | --- |
+| Reference | Expected intervals become `N`; names, lengths, coordinates, and unmasked bases are preserved. Indexes are generated from the resulting FASTA and used successfully. |
+| Input handling | Valid rows/options work; missing required metadata and malformed, unknown, or repeated option keys fail clearly. Multiple rows retain the correct sample/library/read-group associations. |
+| Preprocessing | Expected adapter removal for R1, R2, both, and neither; pairs with a mate below 15 bp are removed, exactly 15 bp passes, and surviving mates remain synchronized. |
+| Mapping | Known synthetic reads map to expected loci. A split-read fixture produces supplementary records with soft clipping and the complete preprocessed sequence. Read-group headers/tags match the input metadata. |
+| Duplicates | Designed duplicates spanning lanes in one library are flagged; matching coordinates in distinct libraries are not grouped together. Duplicate reads remain in the BAM. |
+| Final output | One BAM per sample, coordinate order verified, final index usable for a regional query, and expected records/flags retained. |
+
+Successful exit codes alone do not satisfy these checks. Required CI grows with the staged PRs: scaffold and reference-preparation PRs run their meaningful checks, and the complete reference-to-BAM fixture becomes required when that path is introduced. Every PR must pass all checks required at its stage. The separate HPC run establishes that the selected full-reference path works beyond the fixture; it is not a full-genome requirement for local development or per-PR CI.
+
+## Current verification status
+
+Module interfaces and relevant tool behavior have been researched in [the design record](design.md). No bioinformatics workflow, container, or cluster execution has occurred. NCBI file retrieval, final version pins, runtime compatibility, and resource sizing remain implementation checks. These do not reopen downstream design or require a larger framework.
+
+Repository bootstrap and branch protection were verified on 2026-11-01. Protection includes administrators, requires PRs and passing up-to-date checks, enforces linear history, and prohibits force pushes and deletion; only squash merging is enabled. The [documentation CI workflow](../.github/workflows/documentation.yml) checks changed files for whitespace errors. This initial check does not validate reference preparation or alignment; meaningful synthetic workflow tests must be added with implementation as described above.
