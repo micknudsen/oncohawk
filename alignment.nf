@@ -82,6 +82,7 @@ def sampleInputs(table, sheet) {
     if (table.size() < 2)
         error('Sample sheet must contain at least one data row')
     def used_reads = [:]
+    def sample_names = [:]
     table.drop(1).withIndex().collect { values, index ->
         def row_number = index + 2
         if (values.size() != header.size())
@@ -95,6 +96,10 @@ def sampleInputs(table, sheet) {
                 error("Sample-sheet row ${row_number}: invalid ${field} identifier '${value}'")
             row[field] = value
         }
+        def output_name = row.sample.toLowerCase(java.util.Locale.ROOT)
+        if (sample_names.containsKey(output_name) && sample_names[output_name] != row.sample)
+            error("Sample-sheet row ${row_number}: sample IDs '${sample_names[output_name]}' and '${row.sample}' differ only by case; output filenames must be distinct on case-insensitive filesystems")
+        sample_names[output_name] = row.sample
         def options = inputOptions(row.options, row_number)
         def identity = groovy.json.JsonOutput.toJson([row.sample, row.library, row.flowcell, row.lane])
             .getBytes('UTF-8').encodeBase64().toString().replace('+', '-').replace('/', '_').replace('=', '')

@@ -13,6 +13,8 @@ S1,L1,FC1,1,/data/S1_R1.fastq.gz,/data/S1_R2.fastq.gz
 
 `sample`, `library`, `flowcell`, and `lane` identify the biological and sequencing inputs. Each must match `[A-Za-z0-9][A-Za-z0-9_.-]*`: start with an ASCII letter or digit, followed by letters, digits, underscores, periods, or hyphens. Missing required values and duplicate or unknown column headers fail validation.
 
+Distinct sample IDs must also differ when compared without letter case: `S1` and `s1` cannot coexist in one sheet. This keeps their published BAM and index filenames distinct on case-insensitive filesystems, including the development Mac. Accepted sample names retain their original case; multiple rows with exactly the same sample ID are expected.
+
 `fastq_1` and `fastq_2` identify the corresponding gzipped mate files. Relative paths resolve from the sample-sheet directory, not the launch directory. Each filename must end in `.gz` and match the same safe-character pattern above. Wildcards, using the same file for both mates, and mates with the same basename are rejected. Different rows may use the same basenames in different directories. Missing files and malformed or unusable sequencing inputs fail the workflow.
 
 Each canonical FASTQ path may occur only once anywhere in the sheet, including as the other mate or through a symlink alias. Reusing an input fails even if its metadata is unchanged: this prevents double-counting and assigning the same sequencing input to conflicting samples or read groups. Separate FASTQ chunks with the same sample, library, flowcell, and lane are allowed when their files are distinct.

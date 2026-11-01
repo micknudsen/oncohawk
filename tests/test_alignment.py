@@ -446,6 +446,19 @@ class AlignmentTests(unittest.TestCase):
         self.assertIn("Sample-sheet row 3: FASTQ file already used in row 2", result.stdout)
         self.assertFalse((self.output / "S1.bam").exists())
 
+    def test_rejects_sample_names_that_collide_ignoring_case(self):
+        rows = []
+        for label, sample in [("upper", "S1"), ("lower", "s1")]:
+            self.r1, self.r2 = self.directory / f"{label}_R1.fastq.gz", self.directory / f"{label}_R2.fastq.gz"
+            self.reads([(label, self.chr1[100:200], reverse_complement(self.chr1[300:400]))])
+            rows.append(dict(sample=sample, library="L1", flowcell="FC1", lane="1",
+                             fastq_1=str(self.r1), fastq_2=str(self.r2)))
+        self.sample_rows(rows)
+        result = self.align()
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("Sample-sheet row 3: sample IDs 'S1' and 's1' differ only by case", result.stdout)
+        self.assertFalse(self.output.exists())
+
     def test_rejects_conflicting_read_groups_for_aliased_fastqs(self):
         self.reads([("known", self.chr1[100:200], reverse_complement(self.chr1[300:400]))])
         sources = {path: hashlib.sha256(path.read_bytes()).hexdigest() for path in [self.r1, self.r2]}
