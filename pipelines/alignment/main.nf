@@ -1,8 +1,8 @@
-include { CUTADAPT } from './modules/nf-core/cutadapt/main'
-include { BWAMEM2_MEM } from './modules/nf-core/bwamem2/mem/main'
-include { SAMTOOLS_MERGE } from './modules/nf-core/samtools/merge/main'
-include { PICARD_MARKDUPLICATES } from './modules/nf-core/picard/markduplicates/main'
-include { SAMTOOLS_INDEX } from './modules/nf-core/samtools/index/main'
+include { CUTADAPT } from '../../modules/nf-core/cutadapt/main'
+include { BWAMEM2_MEM } from '../../modules/nf-core/bwamem2/mem/main'
+include { SAMTOOLS_MERGE } from '../../modules/nf-core/samtools/merge/main'
+include { PICARD_MARKDUPLICATES } from '../../modules/nf-core/picard/markduplicates/main'
+include { SAMTOOLS_INDEX } from '../../modules/nf-core/samtools/index/main'
 
 def inputOptions(value, row_number) {
     def options = [:]

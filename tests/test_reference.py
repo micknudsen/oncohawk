@@ -29,22 +29,23 @@ class ReferencePreparationTests(unittest.TestCase):
         self.bundle = self.directory / "bundle"
         self.run_count = 0
 
-    def prepare(self, *arguments):
+    def prepare(self, *arguments, launch_directory=None, default_output=False):
         self.run_count += 1
         command = [
-            os.environ.get("NEXTFLOW", "nextflow"), "run", str(PROJECT),
+            os.environ.get("NEXTFLOW", "nextflow"), "run", str(PROJECT / "pipelines/reference"),
             "-profile", "docker,test",
-            "-with-trace", f"trace-{self.run_count}.tsv",
+            "-with-trace", str(self.directory / f"trace-{self.run_count}.tsv"),
             "--fasta", str(self.fasta), "--bed", str(self.bed),
-            "--outdir", str(self.bundle), *arguments,
+            *(["--outdir", str(self.bundle)] if not default_output else []), *arguments,
         ]
-        result = subprocess.run(command, cwd=self.directory, text=True,
+        result = subprocess.run(command, cwd=launch_directory or self.directory, text=True,
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         (self.directory / f"workflow-{self.run_count}.log").write_text(result.stdout)
+        self.assertNotIn("There's no process matching config selector", result.stdout)
         return result
 
     def test_prepares_masked_indexed_bundle(self):
-        result = self.prepare()
+        result = self.prepare(launch_directory=PROJECT)
         self.assertEqual(result.returncode, 0, result.stdout)
         sequences = {}
         for line in (self.bundle / "reference.fa").read_text().splitlines():
@@ -74,9 +75,25 @@ class ReferencePreparationTests(unittest.TestCase):
         self.assertEqual({entry["tool"] for entry in manifest["tools"]}, {"gunzip", "bedtools", "bwamem2"})
         self.assertTrue(all(entry["version"] for entry in manifest["tools"]))
         self.assertEqual(set(manifest["modules"]), {"gunzip", "bedtools/maskfasta", "bwamem2/index"})
+        hashes = manifest["workflow"]["source_sha256"]
+        self.assertIn("pipelines/reference/main.nf", hashes)
+        self.assertIn("pipelines/reference/nextflow.config", hashes)
+        self.assertIn("conf/common.config", hashes)
+        self.assertIn("bin/validate_reference.py", hashes)
+        self.assertIn("modules/nf-core/bwamem2/index/main.nf", hashes)
+        self.assertFalse(any(path.startswith("pipelines/alignment/") for path in hashes))
+        self.assertFalse(any(path.startswith("conf/containers_") for path in hashes))
+        for source, checksum in hashes.items():
+            self.assertFalse(Path(source).is_absolute())
+            self.assertEqual(hashlib.sha256((PROJECT / source).read_bytes()).hexdigest(), checksum)
         for artifact, checksum in manifest["checksums"].items():
             self.assertFalse(Path(artifact).is_absolute())
             self.assertEqual(hashlib.sha256((self.bundle / artifact).read_bytes()).hexdigest(), checksum)
+
+    def test_defaults_to_reference_in_launch_directory(self):
+        result = self.prepare(default_output=True)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertTrue((self.directory / "reference/bundle.json").is_file())
 
     def test_rejects_unknown_bed_contig(self):
         self.bed.write_text("chrTypo\t0\t2\n")

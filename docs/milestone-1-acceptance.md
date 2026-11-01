@@ -2,7 +2,7 @@
 
 This record verifies the reference-preparation and alignment scope of [issue #1](https://github.com/micknudsen/oncohawk/issues/1) at implementation commit [`ef54b748c57414f8a4526877396f15c4718c516f`](https://github.com/micknudsen/oncohawk/commit/ef54b748c57414f8a4526877396f15c4718c516f). All four functional child issues were completed through passing, merged PRs. The accepted scope remains in [requirements.md](requirements.md); this record connects that scope to implementation and execution evidence.
 
-The two public interfaces are `nextflow run .` for a reusable reference bundle and `nextflow run alignment.nf` for one BAM/index per sample. The [reference guide](reference-bundle.md) and [alignment guide](alignment.md) provide the input contracts and local/production commands.
+Following the [pipeline-directory migration](design.md#pipeline-directory-separation--2026-11-01), the current public interfaces are `nextflow run pipelines/reference` for a reusable reference bundle and `nextflow run pipelines/alignment` for one BAM/index per sample. The [reference guide](reference-bundle.md) and [alignment guide](alignment.md) provide the input contracts and local/production commands. The commit-pinned evidence below describes the original implementation snapshot, before this migration.
 
 ## Requirement-to-evidence matrix
 
