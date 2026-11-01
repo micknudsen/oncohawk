@@ -48,7 +48,7 @@ jobs:
           java -version
           nextflow -version
           docker info
-      - name: Test public reference workflow
+      - name: Test public workflows
         run: python3 -m unittest discover -s tests -v
       - name: Verify pristine pinned nf-core modules
         run: python3 scripts/check_modules.py

@@ -1,0 +1,114 @@
+include { CUTADAPT } from './modules/nf-core/cutadapt/main'
+include { BWAMEM2_MEM } from './modules/nf-core/bwamem2/mem/main'
+include { PICARD_MARKDUPLICATES } from './modules/nf-core/picard/markduplicates/main'
+include { SAMTOOLS_INDEX } from './modules/nf-core/samtools/index/main'
+
+def fastqInput(value, sheet, field) {
+    if (!value?.trim())
+        error("Sample-sheet row 2: missing ${field}")
+    def source = sheet.parent.resolve(value.trim()).normalize()
+    if (!(source.name ==~ /[A-Za-z0-9][A-Za-z0-9_.-]*/) || !source.name.endsWith('.gz'))
+        error("Sample-sheet row 2: ${field} must name one .gz file with a safe basename")
+    def path = file(source, checkIfExists: true)
+    if (!path.isFile())
+        error("Sample-sheet row 2: ${field} must be a regular file")
+    return path
+}
+
+def alignmentReference(value) {
+    def root = file(value, checkIfExists: true)
+    def manifest = root.resolve('bundle.json')
+    if (!manifest.isFile())
+        error('Reference bundle must contain bundle.json')
+    def bundle = new groovy.json.JsonSlurper().parseText(manifest.text)
+    if (!(bundle instanceof Map) || bundle.format_version != 1)
+        error('Unsupported reference-bundle format_version; expected 1')
+    if (bundle.fasta != 'reference.fa' || bundle.bwamem2_index != 'bwamem2/reference.fa')
+        error('Reference-bundle artifact paths do not match format_version 1')
+    def artifacts = ['reference.fa'] + ['.0123', '.amb', '.ann', '.bwt.2bit.64', '.pac']
+        .collect { suffix -> "bwamem2/reference.fa${suffix}".toString() }
+    if (!(bundle.checksums instanceof Map) || bundle.checksums.keySet() != artifacts.toSet())
+        error('Reference bundle must checksum its FASTA and all five bwa-mem2 indexes')
+    artifacts.each { relative ->
+        def path = root.resolve(relative)
+        if (!path.isFile())
+            error("Reference-bundle artifact missing: ${relative}")
+        def digest = java.security.MessageDigest.getInstance('SHA-256')
+        new java.security.DigestInputStream(path.newInputStream(), digest).withCloseable { stream ->
+            stream.transferTo(java.io.OutputStream.nullOutputStream())
+        }
+        if (digest.digest().encodeHex().toString() != bundle.checksums[relative])
+            error("Reference-bundle checksum mismatch: ${relative}")
+    }
+    return [root.resolve('reference.fa'), root.resolve('bwamem2')]
+}
+
+workflow {
+    main:
+    if (!params.input || !params.reference_bundle)
+        error('Alignment requires --input and --reference_bundle')
+    if (workflow.outputDir.exists())
+        error('Alignment output directory already exists; choose a new --outdir')
+    reference = alignmentReference(params.reference_bundle)
+    sheet = file(params.input, checkIfExists: true)
+    inputs = channel.of(sheet)
+        .splitCsv(quote: '"').toList().map { table ->
+            if (!table)
+                error('Sample sheet is empty')
+            def header = table[0].collect { value -> value.trim() }
+            def required = ['sample', 'library', 'flowcell', 'lane', 'fastq_1', 'fastq_2']
+            header.each { field ->
+                if (header.count(field) != 1)
+                    error("Duplicate sample-sheet column '${field}'")
+                if (!(field in required + ['options']))
+                    error("Unknown sample-sheet column '${field}'")
+            }
+            required.each { field ->
+                if (!(field in header))
+                    error("Missing sample-sheet column '${field}'")
+            }
+            if (table.size() != 2)
+                error('Unsupported input: expected exactly one sample-sheet row')
+            if (table[1].size() != header.size())
+                error("Sample-sheet row 2: expected ${header.size()} columns, found ${table[1].size()}")
+            def row = [header, table[1]].transpose().collectEntries { key, value -> [key, value] }
+            ['sample', 'library', 'flowcell', 'lane'].each { field ->
+                def value = row[field]?.trim()
+                if (!value)
+                    error("Sample-sheet row 2: missing ${field}")
+                if (!(value ==~ /[A-Za-z0-9][A-Za-z0-9_.-]*/))
+                    error("Sample-sheet row 2: invalid ${field} identifier '${value}'")
+                row[field] = value
+            }
+            if (row.options?.trim())
+                error('Unsupported input: nonblank options are not supported by this alignment slice')
+            def identity = groovy.json.JsonOutput.toJson([row.sample, row.library, row.flowcell, row.lane])
+                .getBytes('UTF-8').encodeBase64().toString().replace('+', '-').replace('/', '_').replace('=', '')
+            def platform_unit = "${row.flowcell.replace('.', '%2E')}.${row.lane.replace('.', '%2E')}"
+            def group = "@RG\\tID:rg_${identity}\\tSM:${row.sample}\\tLB:${row.library}\\tPU:${platform_unit}"
+            def reads = ['fastq_1', 'fastq_2'].collect { field -> fastqInput(row[field], sheet, field) }
+            if (reads[0].toRealPath() == reads[1].toRealPath())
+                error('Sample-sheet row 2: R1 and R2 must be distinct files')
+            if (reads[0].name == reads[1].name)
+                error('Sample-sheet row 2: R1 and R2 must have distinct basenames for staging')
+            [[id: 'input1', sample: row.sample, single_end: false, read_group: group],
+             reads]
+        }
+    CUTADAPT(inputs)
+    BWAMEM2_MEM(CUTADAPT.out.reads, channel.value([[id: 'reference'], reference[1]]),
+                channel.value([[id: 'reference'], reference[0]]), true)
+    PICARD_MARKDUPLICATES(BWAMEM2_MEM.out.bam, channel.value([[:], [], []]))
+    SAMTOOLS_INDEX(PICARD_MARKDUPLICATES.out.bam)
+    completed = PICARD_MARKDUPLICATES.out.bam.join(SAMTOOLS_INDEX.out.index)
+
+    publish:
+    samples = completed
+}
+
+output {
+    samples {
+        path '.'
+        mode 'copy'
+        overwrite false
+    }
+}
