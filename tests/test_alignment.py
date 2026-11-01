@@ -42,12 +42,12 @@ class AlignmentTests(unittest.TestCase):
         bed.write_text("chr1\t4000\t4010\n")
         cls.bundle = cls.reference_directory / "bundle"
         result = subprocess.run([
-            os.environ.get("NEXTFLOW", "nextflow"), "run", str(PROJECT),
+            os.environ.get("NEXTFLOW", "nextflow"), "run", str(PROJECT / "pipelines/reference"),
             "-profile", "docker,test", "--fasta", str(fasta), "--bed", str(bed),
             "--outdir", str(cls.bundle),
         ], cwd=cls.reference_directory, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         (cls.reference_directory / "preparation.log").write_text(result.stdout)
-        if result.returncode:
+        if result.returncode or "There's no process matching config selector" in result.stdout:
             raise AssertionError(result.stdout)
 
     def setUp(self):
@@ -77,15 +77,16 @@ class AlignmentTests(unittest.TestCase):
             writer.writeheader()
             writer.writerows(rows)
 
-    def align(self):
+    def align(self, launch_directory=None, default_output=False):
         self.run_count += 1
         result = subprocess.run([
-            os.environ.get("NEXTFLOW", "nextflow"), "run", str(PROJECT / "alignment.nf"),
-            "-profile", "docker,test", "-with-trace", f"trace-{self.run_count}.tsv",
+            os.environ.get("NEXTFLOW", "nextflow"), "run", str(PROJECT / "pipelines/alignment"),
+            "-profile", "docker,test", "-with-trace", str(self.directory / f"trace-{self.run_count}.tsv"),
             "--reference_bundle", str(self.bundle), "--input", str(self.sheet),
-            "--outdir", str(self.output),
-        ], cwd=self.directory, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            *(["--outdir", str(self.output)] if not default_output else []),
+        ], cwd=launch_directory or self.directory, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         (self.directory / f"alignment-{self.run_count}.log").write_text(result.stdout)
+        self.assertNotIn("There's no process matching config selector", result.stdout)
         return result
 
     def samtools(self, *arguments):
@@ -112,7 +113,7 @@ class AlignmentTests(unittest.TestCase):
     def test_reference_to_bam_maps_known_pair_with_read_group(self):
         self.reads([("known", self.chr1[100:200], reverse_complement(self.chr1[300:400]))])
         self.samples()
-        result = self.align()
+        result = self.align(launch_directory=PROJECT)
         self.assertEqual(result.returncode, 0, result.stdout)
         records = [line.split("\t") for line in self.samtools("view", "/data/S1.bam").splitlines()]
         self.assertEqual([(r[0], r[2], int(r[3])) for r in records],
@@ -126,6 +127,16 @@ class AlignmentTests(unittest.TestCase):
         identifier = next(field[3:] for field in group.split("\t") if field.startswith("ID:"))
         self.assertTrue(all(f"RG:Z:{identifier}" in record for record in records))
         self.assertEqual(len(self.samtools("view", "/data/S1.bam", "chr1:101-150").splitlines()), 1)
+
+    def test_defaults_to_alignments_in_launch_directory(self):
+        self.reads([("pair", self.chr1[100:200], reverse_complement(self.chr1[300:400]))])
+        self.samples()
+        result = self.align(default_output=True)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.output = self.directory / "alignments"
+        self.assertTrue((self.output / "S1.bam").is_file())
+        self.assertTrue((self.output / "S1.bam.bai").is_file())
+        self.assert_bam_pairs([("pair", self.chr1[100:200], reverse_complement(self.chr1[300:400]))])
 
     def test_valid_sample_name_cannot_collide_with_internal_mapped_bam(self):
         self.reads([("known", self.chr1[100:200], reverse_complement(self.chr1[300:400]))])

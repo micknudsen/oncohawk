@@ -2,7 +2,7 @@
 
 Fresh session started 2026-11-01. The [requirements](requirements.md) contain the accepted restart brief. This document tracks only decisions needed for milestone 1.
 
-**Status: milestone-1 scope decisions complete through Q8.** The [implementation plan](implementation-plan.md) is ready for review. No further interview question is pending; implementation is not yet authorized.
+**Status: milestone-1 scope decisions complete through Q8; initial implementation completed.** The [implementation plan](implementation-plan.md) and [acceptance record](milestone-1-acceptance.md) document that work. The subsequent [pipeline-directory migration](#pipeline-directory-separation--2026-11-01) is accepted and authorized for implementation.
 
 The milestone spec is published as [GitHub issue #1](https://github.com/micknudsen/oncohawk/issues/1), with the confirmed workflow-level testing boundaries.
 
@@ -141,6 +141,40 @@ During the explicitly requested to-spec synthesis, the user confirmed two public
 During ticket planning, the user specified that they will check SLURM/Apptainer operation informally along the way and report problems. HPC tests must never be formal acceptance criteria. Removed the proposed standalone HPC-verification ticket; production profiles and usage instructions belong to the reference-preparation and alignment slices.
 
 Formal workflow acceptance remains based on compact synthetic tests with Docker locally and in required CI. Do not wait for HPC access, results, or sign-off to complete tickets or the milestone. No reported HPC problem means no HPC blocker; record actual evidence accurately without calling silence a verified run. This clarification supersedes the earlier proposal for a required full-reference HPC verification run.
+
+## Pipeline directory separation — 2026-11-01
+
+**Status: accepted on 2026-11-01; shared understanding confirmed and implementation authorized.**
+
+Give reference preparation and alignment separate pipeline directories, each with its own `main.nf` and `nextflow.config`: `pipelines/reference/` and `pipelines/alignment/`. Selecting a pipeline should load its process configuration without selectors belonging only to the other pipeline.
+
+The user accepted a clean migration to `nextflow run pipelines/reference` and `nextflow run pipelines/alignment`, removing the root `reference.nf` and `alignment.nf` entrypoints without compatibility wrappers. Update documentation, tests, and their callers together. Shared modules remain shared. The user confirmed the complete migration scope before implementation. Update the public workflow tests to reject unmatched-process-selector warnings and verify reference provenance and the output defaults.
+
+Ask only one question per interview round.
+
+### Default output directories
+
+**Status: accepted on 2026-11-01.**
+
+Reference preparation defaults to `reference`; alignment defaults to `alignments`. Both pipelines allow `--outdir` to override the default. The output-directory name does not rename the reference-bundle domain concept.
+
+### Reference source provenance
+
+**Status: accepted on 2026-11-01.**
+
+Reference bundles record source hashes for reference-preparation files and the shared files used by reference preparation. Exclude files belonging exclusively to the separate alignment workflow, including its entrypoint and process configuration. Replace the current broad configuration-file collection accordingly; editing alignment-only files must not change the reference source-hash set or values. Repository commit identity remains separate provenance and may change after any commit.
+
+### Cluster configuration separation
+
+**Status: accepted on 2026-11-01.**
+
+Keep cluster-specific settings (SLURM partition and account, Nextflow work directory, and Apptainer cache directory) in one shared site configuration. Keep process-specific CPU, memory, and time settings in separate reference-preparation and alignment resource files. Each pipeline loads only its own process-resource settings, so a shared site configuration does not introduce selectors for the other pipeline.
+
+### Pre-release compatibility policy
+
+**Status: accepted on 2026-11-01.**
+
+Before the first official pipeline release, backward compatibility must never constrain changes. Every commit may break functionality, including existing commands, configuration, interfaces, and artifact formats. Do not add compatibility wrappers or migration machinery solely to preserve earlier pre-release behavior. Keep current documentation and tests consistent with the intended behavior; permission to break compatibility does not remove validation requirements. This policy applies to pre-release development generally, not only the pipeline-directory migration.
 
 ## Deferred
 

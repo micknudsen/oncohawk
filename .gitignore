@@ -2,5 +2,6 @@
 /.local/
 /.nextflow*
 /work/
-/reference-bundle/
+/reference/
+/alignments/
 __pycache__/

@@ -14,10 +14,14 @@ python3 -m unittest discover -s tests -v
 
 These tests run real reference preparation, alignment, and their composition with Docker through the public workflow interfaces. The `docker,test` profiles limit execution to compact fixtures; full-human-reference runs belong on the production cluster.
 
+Each pipeline has its own entrypoint and process configuration under `pipelines/`; modules and execution-environment settings are shared. Default output directories are `reference` and `alignments`, respectively. Override either with `--outdir`.
+
+Before the first official pipeline release, every commit may break functionality; backward compatibility is not maintained.
+
 Prepare a bundle from your own small fixture:
 
 ```bash
-nextflow run . -profile docker,test \
+nextflow run pipelines/reference -profile docker,test \
   --fasta /path/to/small.fa.gz \
   --bed /path/to/exclusions.bed \
   --outdir /path/to/new-bundle
@@ -26,7 +30,7 @@ nextflow run . -profile docker,test \
 Align small paired-end fixtures against that prepared bundle:
 
 ```bash
-nextflow run alignment.nf -profile docker,test \
+nextflow run pipelines/alignment -profile docker,test \
   --input /path/to/samples.csv \
   --reference_bundle /path/to/new-bundle \
   --outdir /path/to/new-alignments

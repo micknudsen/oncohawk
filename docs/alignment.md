@@ -1,6 +1,6 @@
 # Align samples from paired FASTQs
 
-The public `alignment.nf` entry point accepts a [prepared reference bundle](reference-bundle.md) and a sample sheet with one row per gzipped FASTQ pair. It applies shared Cutadapt adapter removal and length filtering, maps each pair with bwa-mem2, and combines rows into one coordinate-sorted, indexed BAM per sample. Duplicate detection considers all lanes of each library together, keeps distinct libraries separate, and retains duplicate records with their flags set.
+The public `pipelines/alignment` entry point accepts a [prepared reference bundle](reference-bundle.md) and a sample sheet with one row per gzipped FASTQ pair. It applies shared Cutadapt adapter removal and length filtering, maps each pair with bwa-mem2, and combines rows into one coordinate-sorted, indexed BAM per sample. Duplicate detection considers all lanes of each library together, keeps distinct libraries separate, and retains duplicate records with their flags set.
 
 ## Sample sheet
 
@@ -56,7 +56,7 @@ Internal row identities are hashes of the read-group tuple and canonical mate pa
 Use the [pinned development runtimes](reference-bundle.md#runtime-pins) and a running Docker installation. Prepare a compact bundle and matching gzipped read pairs, then run from the checkout:
 
 ```bash
-nextflow run alignment.nf -profile docker,test \
+nextflow run pipelines/alignment -profile docker,test \
   --input /path/to/samples.csv \
   --reference_bundle /path/to/prepared-bundle \
   --outdir /path/to/new-alignments
@@ -75,6 +75,8 @@ bwa-mem2 receives the row's read group through `-R` and uses `-Y` supplementary 
 Coordinate-sorted row BAMs are grouped by sample and passed to samtools merge in a stable filename order. Its `-c` setting preserves the shared read-group ID for compatible chunks with identical definitions. Program records remain distinct; `-p` is not enabled. Picard then marks duplicates once per sample using the read groups' `LB` fields, before the final BAM is indexed. This combines lanes within a library without treating matching coordinates from different libraries as duplicates of each other.
 
 ## Outputs and failures
+
+The default output directory is `alignments`; use `--outdir` to choose a different fresh destination.
 
 For the two samples in the example, successful completion publishes exactly one BAM and index per sample:
 
@@ -96,12 +98,14 @@ Tool logs and Picard duplicate metrics remain in task work directories. Add `-wi
 
 ## Production with SLURM and Apptainer
 
-Copy [the site example](../conf/site.example.config), replace its queue/account and shared paths, and adjust CPU, memory, and time for your cluster. Its named allocations for `CUTADAPT`, `BWAMEM2_MEM`, `SAMTOOLS_MERGE`, `PICARD_MARKDUPLICATES`, and `SAMTOOLS_INDEX` are illustrative, not measured requirements. Inputs, the reference bundle, work directory, output directory, and Apptainer cache must be accessible to the submission host and compute nodes.
+Copy [the site example](../conf/site.example.config) and replace its queue/account and shared paths. This file contains only shared cluster settings. The `slurm` profile automatically loads [alignment process allocations](../pipelines/alignment/resources.config); copy these separately to customize CPU, memory, and time. Allocations for `CUTADAPT`, `BWAMEM2_MEM`, `SAMTOOLS_MERGE`, `PICARD_MARKDUPLICATES`, and `SAMTOOLS_INDEX` are illustrative, not measured requirements. Inputs, the reference bundle, work directory, output directory, and Apptainer cache must be accessible to the submission host and compute nodes.
 
 ```bash
+mkdir -p .local
 cp conf/site.example.config .local/site.config
-# Edit .local/site.config for your cluster before running.
-nextflow run alignment.nf -profile slurm -c .local/site.config \
+cp pipelines/alignment/resources.config .local/alignment-resources.config
+# Edit the shared site settings and alignment resource allocations for your cluster.
+nextflow run pipelines/alignment -profile slurm -c .local/site.config,.local/alignment-resources.config \
   --input /shared/PROJECT/samples.csv \
   --reference_bundle /shared/PROJECT/bundles/grch38-no-alt \
   --outdir /shared/PROJECT/alignments/run-001

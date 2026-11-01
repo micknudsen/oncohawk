@@ -1,6 +1,6 @@
 # Prepare an alignment reference bundle
 
-The default entry point, `nextflow run .`, validates reference inputs, decompresses a gzipped FASTA, hard-masks BED intervals with `N`, and builds bwa-mem2 indexes from that exact masked sequence. It publishes the reusable bundle after successful validation and tool execution. Knowledge compilation and sample alignment are outside this entry point.
+The reference-preparation entry point, `nextflow run pipelines/reference`, validates reference inputs, decompresses a gzipped FASTA, hard-masks BED intervals with `N`, and builds bwa-mem2 indexes from that exact masked sequence. It publishes the reusable bundle after successful validation and tool execution. Knowledge compilation and sample alignment are outside this entry point.
 
 ## Runtime pins
 
@@ -18,7 +18,7 @@ Required CI checks every installed module file against its pinned upstream Git o
 | --- | --- |
 | `--fasta` | Local `.fa`/`.fa.gz` or a downloadable FASTA URL. Defaults to the selected NCBI no-ALT analysis set below. |
 | `--bed` | Local exclusion BED or downloadable BED URL. Defaults to the matching NCBI exclusions below. |
-| `--outdir` | New directory for the completed bundle; default `reference-bundle`. Choose a fresh destination for each bundle. |
+| `--outdir` | New directory for the completed bundle; default `reference`. Choose a fresh destination for each bundle. |
 | `--fasta_sha256`, `--bed_sha256` | Optional expected SHA256 values for custom source files, checked before preparation. For `.gz` input, hash the compressed source bytes. |
 | `--allow_ncbi_alt_omission true` | Explicitly declare that local/custom inputs permit the one known no-ALT exclusion described below. |
 
@@ -42,7 +42,7 @@ with gzip.open(example / 'small.fa.gz', 'wt') as handle:
     handle.write('>chr1\nACGTACGTACGTACGTACGT\n>chr2\nTTTTCCCCAAAAGGGG\n')
 (example / 'exclusions.bed').write_text('chr1\t4\t8\nchr2\t0\t2\n')
 PY
-nextflow run . -profile docker,test \
+nextflow run pipelines/reference -profile docker,test \
   --fasta .local/reference-example/small.fa.gz \
   --bed .local/reference-example/exclusions.bed \
   --outdir .local/reference-example/bundle
@@ -56,12 +56,14 @@ A subsequent trace of the 36-base fixture on the same date measured 19.8 MB peak
 
 ## Production with SLURM and Apptainer
 
-Copy [conf/site.example.config](../conf/site.example.config) to a local site configuration, then replace its partition, optional account, and shared paths. The submission host and compute nodes must see the work directory, input files, output destination, and Apptainer cache. The example resource requests are starting allocations, not measured cluster requirements; adjust the named process CPU, memory, and time values for your site.
+Copy [conf/site.example.config](../conf/site.example.config) to a local site configuration, then replace its partition, optional account, and shared paths. The submission host and compute nodes must see the work directory, input files, output destination, and Apptainer cache. The shared site file contains no process-name selectors. The `slurm` profile automatically loads [reference process allocations](../pipelines/reference/resources.config). These are starting allocations, not measured cluster requirements. To customize them, copy that resource file and pass it as a second configuration file; keep it specific to reference preparation.
 
 ```bash
+mkdir -p .local
 cp conf/site.example.config .local/site.config
-# Edit .local/site.config for your cluster before running.
-nextflow run . -profile slurm -c .local/site.config \
+cp pipelines/reference/resources.config .local/reference-resources.config
+# Edit the shared site settings and reference resource allocations for your cluster.
+nextflow run pipelines/reference -profile slurm -c .local/site.config,.local/reference-resources.config \
   --outdir /shared/PROJECT/oncohawk/bundles/grch38-no-alt
 ```
 
@@ -72,7 +74,7 @@ HPC execution is checked informally by the operator. HPC access, runs, evidence,
 ## Published bundle
 
 ```text
-bundle/
+reference/
 ├── reference.fa
 ├── bwamem2/
 │   ├── reference.fa.0123
@@ -83,4 +85,4 @@ bundle/
 └── bundle.json
 ```
 
-`bundle.json` has `format_version: 1`, relative `fasta` and `bwamem2_index` paths, SHA256 artifact checksums, source URIs and checksums, sequence lengths, omitted BED entries, tool/module versions, and workflow identity/source hashes. The index path is a prefix; all five index files accompany it. Keep the manifest and artifacts together when moving a bundle. A process failure is a failed preparation, not a completed bundle; inspect the Nextflow task log before retrying into a new output destination.
+`bundle.json` has `format_version: 1`, relative `fasta` and `bwamem2_index` paths, SHA256 artifact checksums, source URIs and checksums, sequence lengths, omitted BED entries, tool/module versions, and workflow identity/source hashes. Source hashes use repository-relative paths and cover reference-preparation sources and shared files used by preparation, excluding alignment-only sources. The repository commit is recorded separately. The index path is a prefix; all five index files accompany it. Keep the manifest and artifacts together when moving a bundle. A process failure is a failed preparation, not a completed bundle; inspect the Nextflow task log before retrying into a new output destination.

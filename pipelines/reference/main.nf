@@ -1,8 +1,8 @@
-include { GUNZIP } from './modules/nf-core/gunzip/main'
-include { BEDTOOLS_MASKFASTA } from './modules/nf-core/bedtools/maskfasta/main'
-include { BWAMEM2_INDEX } from './modules/nf-core/bwamem2/index/main'
-include { REFERENCE_BUNDLE } from './modules/local/reference_bundle'
-include { REFERENCE_VALIDATE } from './modules/local/reference_validate'
+include { GUNZIP } from '../../modules/nf-core/gunzip/main'
+include { BEDTOOLS_MASKFASTA } from '../../modules/nf-core/bedtools/maskfasta/main'
+include { BWAMEM2_INDEX } from '../../modules/nf-core/bwamem2/index/main'
+include { REFERENCE_BUNDLE } from '../../modules/local/reference_bundle'
+include { REFERENCE_VALIDATE } from '../../modules/local/reference_validate'
 
 def encoded(value) {
     return groovy.json.JsonOutput.toJson(value).getBytes('UTF-8').encodeBase64().toString()
@@ -18,6 +18,7 @@ def referenceInput(value) {
 }
 
 workflow {
+    repository = projectDir.parent.parent
     if (file(params.outdir).exists())
         error('Reference bundle output directory already exists; choose a new --outdir')
     allow_alt = params.allow_ncbi_alt_omission.toString()
@@ -40,13 +41,20 @@ workflow {
     }
     GUNZIP(inputs.compressed.map { path -> [[id: 'reference'], path] })
     uncompressed = GUNZIP.out.gunzip.map { _meta, path -> path }.mix(inputs.plain)
-    REFERENCE_VALIDATE(uncompressed, bed, fasta, policy, file("$projectDir/bin/validate_reference.py"))
+    REFERENCE_VALIDATE(uncompressed, bed, fasta, policy, file("$repository/bin/validate_reference.py"))
     BEDTOOLS_MASKFASTA(REFERENCE_VALIDATE.out.bed.map { path -> [[id: 'reference'], path] }, REFERENCE_VALIDATE.out.fasta)
     BWAMEM2_INDEX(BEDTOOLS_MASKFASTA.out.fasta)
-    modules = new groovy.json.JsonSlurper().parseText(file("$projectDir/modules.json").text)
-    source_hashes = files("$projectDir/{reference.nf,nextflow.config,modules.json,bin/*.py,conf/*.config,modules/local/*.nf}")
+    modules = new groovy.json.JsonSlurper().parseText(file("$repository/modules.json").text)
+    source_paths = [
+        'pipelines/reference/*.nf', 'pipelines/reference/*.config',
+        'conf/common.config', 'conf/slurm.config', 'modules.json',
+        'bin/validate_reference.py', 'bin/package_reference.py', 'modules/local/*.nf',
+        'modules/nf-core/gunzip/main.nf', 'modules/nf-core/bedtools/maskfasta/main.nf',
+        'modules/nf-core/bwamem2/index/main.nf'
+    ]
+    source_hashes = source_paths.collectMany { pattern -> files("$repository/$pattern") }
         .collectEntries { path ->
-            [projectDir.relativize(path).toString(), java.security.MessageDigest.getInstance('SHA-256').digest(path.bytes).encodeHex().toString()]
+            [repository.relativize(path).toString(), java.security.MessageDigest.getInstance('SHA-256').digest(path.bytes).encodeHex().toString()]
         }
     metadata = encoded([
         sources: [fasta: [uri: params.fasta.toString()], bed: [uri: params.bed.toString()]],
@@ -60,6 +68,6 @@ workflow {
         .collect(flat: false).map { entries -> encoded(entries) }
     REFERENCE_BUNDLE(
         BEDTOOLS_MASKFASTA.out.fasta.map { _meta, path -> path }, BWAMEM2_INDEX.out.index.map { _meta, path -> path },
-        REFERENCE_VALIDATE.out.report, metadata, versions, file("$projectDir/bin/package_reference.py")
+        REFERENCE_VALIDATE.out.report, metadata, versions, file("$repository/bin/package_reference.py")
     )
 }
