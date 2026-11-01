@@ -1,37 +1,38 @@
 include { CUTADAPT } from './modules/nf-core/cutadapt/main'
 include { BWAMEM2_MEM } from './modules/nf-core/bwamem2/mem/main'
+include { SAMTOOLS_MERGE } from './modules/nf-core/samtools/merge/main'
 include { PICARD_MARKDUPLICATES } from './modules/nf-core/picard/markduplicates/main'
 include { SAMTOOLS_INDEX } from './modules/nf-core/samtools/index/main'
 
-def inputOptions(value) {
+def inputOptions(value, row_number) {
     def options = [:]
     if (!value?.trim())
         return options
     value.split(';', -1).each { entry ->
         def parts = entry.split('=', -1).collect { it.trim() }
         if (parts.size() != 2 || !parts[0] || !parts[1])
-            error('Sample-sheet row 2: malformed options; expected nonempty key=value entries')
+            error("Sample-sheet row ${row_number}: malformed options; expected nonempty key=value entries")
         def (key, sequence) = parts
         if (!(key in ['r1_adapter', 'r2_adapter']))
-            error("Sample-sheet row 2: unknown option '${key}'")
+            error("Sample-sheet row ${row_number}: unknown option '${key}'")
         if (options.containsKey(key))
-            error("Sample-sheet row 2: repeated option '${key}'")
+            error("Sample-sheet row ${row_number}: repeated option '${key}'")
         if (!(sequence ==~ /(?i)[ACGTRYSWKMBDHVN]+/))
-            error("Sample-sheet row 2: ${key} must be a DNA IUPAC sequence")
+            error("Sample-sheet row ${row_number}: ${key} must be a DNA IUPAC sequence")
         options[key] = sequence.toUpperCase()
     }
     return options
 }
 
-def fastqInput(value, sheet, field) {
+def fastqInput(value, sheet, field, row_number) {
     if (!value?.trim())
-        error("Sample-sheet row 2: missing ${field}")
+        error("Sample-sheet row ${row_number}: missing ${field}")
     def source = sheet.parent.resolve(value.trim()).normalize()
     if (!(source.name ==~ /[A-Za-z0-9][A-Za-z0-9_.-]*/) || !source.name.endsWith('.gz'))
-        error("Sample-sheet row 2: ${field} must name one .gz file with a safe basename")
+        error("Sample-sheet row ${row_number}: ${field} must name one .gz file with a safe basename")
     def path = file(source, checkIfExists: true)
     if (!path.isFile())
-        error("Sample-sheet row 2: ${field} must be a regular file")
+        error("Sample-sheet row ${row_number}: ${field} must be a regular file")
     return path
 }
 
@@ -63,6 +64,62 @@ def alignmentReference(value) {
     return [root.resolve('reference.fa'), root.resolve('bwamem2')]
 }
 
+def sampleInputs(table, sheet) {
+    if (!table)
+        error('Sample sheet is empty')
+    def header = table[0].collect { value -> value.trim() }
+    def required = ['sample', 'library', 'flowcell', 'lane', 'fastq_1', 'fastq_2']
+    header.each { field ->
+        if (header.count(field) != 1)
+            error("Duplicate sample-sheet column '${field}'")
+        if (!(field in required + ['options']))
+            error("Unknown sample-sheet column '${field}'")
+    }
+    required.each { field ->
+        if (!(field in header))
+            error("Missing sample-sheet column '${field}'")
+    }
+    if (table.size() < 2)
+        error('Sample sheet must contain at least one data row')
+    def used_reads = [:]
+    table.drop(1).withIndex().collect { values, index ->
+        def row_number = index + 2
+        if (values.size() != header.size())
+            error("Sample-sheet row ${row_number}: expected ${header.size()} columns, found ${values.size()}")
+        def row = [header, values].transpose().collectEntries { key, value -> [key, value] }
+        ['sample', 'library', 'flowcell', 'lane'].each { field ->
+            def value = row[field]?.trim()
+            if (!value)
+                error("Sample-sheet row ${row_number}: missing ${field}")
+            if (!(value ==~ /[A-Za-z0-9][A-Za-z0-9_.-]*/))
+                error("Sample-sheet row ${row_number}: invalid ${field} identifier '${value}'")
+            row[field] = value
+        }
+        def options = inputOptions(row.options, row_number)
+        def identity = groovy.json.JsonOutput.toJson([row.sample, row.library, row.flowcell, row.lane])
+            .getBytes('UTF-8').encodeBase64().toString().replace('+', '-').replace('/', '_').replace('=', '')
+        def platform_unit = "${row.flowcell.replace('.', '%2E')}.${row.lane.replace('.', '%2E')}"
+        def group = "@RG\\tID:rg_${identity}\\tSM:${row.sample}\\tLB:${row.library}\\tPU:${platform_unit}"
+        def reads = ['fastq_1', 'fastq_2'].collect { field -> fastqInput(row[field], sheet, field, row_number) }
+        def real_reads = reads.collect { it.toRealPath().toString() }
+        if (real_reads[0] == real_reads[1])
+            error("Sample-sheet row ${row_number}: R1 and R2 must be distinct files")
+        if (reads[0].name == reads[1].name)
+            error("Sample-sheet row ${row_number}: R1 and R2 must have distinct basenames for staging")
+        real_reads.each { path ->
+            if (used_reads.containsKey(path))
+                error("Sample-sheet row ${row_number}: FASTQ file already used in row ${used_reads[path]}; repeated or conflicting read-group assignment")
+            used_reads[path] = row_number
+        }
+        def task_identity = groovy.json.JsonOutput.toJson([identity, real_reads])
+        def task_id = java.security.MessageDigest.getInstance('SHA-256')
+            .digest(task_identity.getBytes('UTF-8')).encodeHex().toString()
+        [[id: "row_${task_id}".toString(), sample: row.sample, single_end: false, read_group: group,
+          r1_adapter: options.r1_adapter, r2_adapter: options.r2_adapter],
+         reads]
+    }
+}
+
 workflow {
     main:
     if (!params.input || !params.reference_bundle)
@@ -72,52 +129,18 @@ workflow {
     reference = alignmentReference(params.reference_bundle)
     sheet = file(params.input, checkIfExists: true)
     inputs = channel.of(sheet)
-        .splitCsv(quote: '"').toList().map { table ->
-            if (!table)
-                error('Sample sheet is empty')
-            def header = table[0].collect { value -> value.trim() }
-            def required = ['sample', 'library', 'flowcell', 'lane', 'fastq_1', 'fastq_2']
-            header.each { field ->
-                if (header.count(field) != 1)
-                    error("Duplicate sample-sheet column '${field}'")
-                if (!(field in required + ['options']))
-                    error("Unknown sample-sheet column '${field}'")
-            }
-            required.each { field ->
-                if (!(field in header))
-                    error("Missing sample-sheet column '${field}'")
-            }
-            if (table.size() != 2)
-                error('Unsupported input: expected exactly one sample-sheet row')
-            if (table[1].size() != header.size())
-                error("Sample-sheet row 2: expected ${header.size()} columns, found ${table[1].size()}")
-            def row = [header, table[1]].transpose().collectEntries { key, value -> [key, value] }
-            ['sample', 'library', 'flowcell', 'lane'].each { field ->
-                def value = row[field]?.trim()
-                if (!value)
-                    error("Sample-sheet row 2: missing ${field}")
-                if (!(value ==~ /[A-Za-z0-9][A-Za-z0-9_.-]*/))
-                    error("Sample-sheet row 2: invalid ${field} identifier '${value}'")
-                row[field] = value
-            }
-            def options = inputOptions(row.options)
-            def identity = groovy.json.JsonOutput.toJson([row.sample, row.library, row.flowcell, row.lane])
-                .getBytes('UTF-8').encodeBase64().toString().replace('+', '-').replace('/', '_').replace('=', '')
-            def platform_unit = "${row.flowcell.replace('.', '%2E')}.${row.lane.replace('.', '%2E')}"
-            def group = "@RG\\tID:rg_${identity}\\tSM:${row.sample}\\tLB:${row.library}\\tPU:${platform_unit}"
-            def reads = ['fastq_1', 'fastq_2'].collect { field -> fastqInput(row[field], sheet, field) }
-            if (reads[0].toRealPath() == reads[1].toRealPath())
-                error('Sample-sheet row 2: R1 and R2 must be distinct files')
-            if (reads[0].name == reads[1].name)
-                error('Sample-sheet row 2: R1 and R2 must have distinct basenames for staging')
-            [[id: 'input1', sample: row.sample, single_end: false, read_group: group,
-              r1_adapter: options.r1_adapter, r2_adapter: options.r2_adapter],
-             reads]
-        }
+        .splitCsv(quote: '"').toList()
+        .map { table -> sampleInputs(table, sheet) }
+        .flatMap { rows -> rows }
     CUTADAPT(inputs)
     BWAMEM2_MEM(CUTADAPT.out.reads, channel.value([[id: 'reference'], reference[1]]),
                 channel.value([[id: 'reference'], reference[0]]), true)
-    PICARD_MARKDUPLICATES(BWAMEM2_MEM.out.bam, channel.value([[:], [], []]))
+    sample_bams = BWAMEM2_MEM.out.bam
+        .map { meta, bam -> [[id: meta.sample, sample: meta.sample], bam] }
+        .groupTuple()
+        .map { meta, bams -> [meta, bams.sort { it.name }, []] }
+    SAMTOOLS_MERGE(sample_bams, channel.value([[:], [], [], []]), '')
+    PICARD_MARKDUPLICATES(SAMTOOLS_MERGE.out.bam, channel.value([[:], [], []]))
     SAMTOOLS_INDEX(PICARD_MARKDUPLICATES.out.bam)
     completed = PICARD_MARKDUPLICATES.out.bam.join(SAMTOOLS_INDEX.out.index)
 

@@ -21,6 +21,11 @@ def reverse_complement(sequence):
     return sequence.translate(str.maketrans("ACGT", "TGCA"))[::-1]
 
 
+def read_groups(header):
+    return [dict(field.split(":", 1) for field in line.split("\t")[1:])
+            for line in header.splitlines() if line.startswith("@RG\t")]
+
+
 class AlignmentTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -64,10 +69,13 @@ class AlignmentTests(unittest.TestCase):
         row = dict(sample="S1", library="L1", flowcell="FC1", lane="1",
                    fastq_1=str(self.r1), fastq_2=str(self.r2))
         row.update(changes)
+        self.sample_rows([row])
+
+    def sample_rows(self, rows):
         with self.sheet.open("w", newline="") as handle:
-            writer = csv.DictWriter(handle, fieldnames=list(row))
+            writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
             writer.writeheader()
-            writer.writerow(row)
+            writer.writerows(rows)
 
     def align(self):
         self.run_count += 1
@@ -86,8 +94,8 @@ class AlignmentTests(unittest.TestCase):
             "-v", f"{self.output}:/data:ro", SAMTOOLS, "samtools", *arguments,
         ], text=True)
 
-    def assert_bam_pairs(self, expected):
-        records = [line.split("\t") for line in self.samtools("view", "/data/S1.bam").splitlines()]
+    def assert_bam_pairs(self, expected, sample="S1"):
+        records = [line.split("\t") for line in self.samtools("view", f"/data/{sample}.bam").splitlines()]
         self.assertEqual(len(records), len(expected) * 2)
         observed = {}
         for record in records:
@@ -194,6 +202,60 @@ class AlignmentTests(unittest.TestCase):
         self.assertEqual(len(set(duplicate_names)), 1)
         self.assertEqual([int(record[3]) for record in records], [501, 501, 801, 801])
 
+    def test_combines_lanes_by_sample_with_library_aware_duplicates(self):
+        first = self.chr1[500:600]
+        second = reverse_complement(self.chr1[800:900])
+        inputs = [
+            ("lane1", "S1", "L1", "1"),
+            ("lane2", "S1", "L1", "2"),
+            ("library2", "S1", "L2", "1"),
+            ("sample2", "S2", "L1", "1"),
+        ]
+        rows = []
+        sources = {}
+        for name, sample, library, lane in inputs:
+            directory = self.directory / name
+            directory.mkdir()
+            self.r1, self.r2 = directory / "R1.fastq.gz", directory / "R2.fastq.gz"
+            self.reads([(name, first, second)])
+            rows.append(dict(sample=sample, library=library, flowcell="FC1", lane=lane,
+                             fastq_1=str(self.r1), fastq_2=str(self.r2)))
+            sources.update({path: hashlib.sha256(path.read_bytes()).hexdigest()
+                            for path in [self.r1, self.r2]})
+        self.sample_rows(rows)
+        result = self.align()
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(sorted(path.name for path in self.output.iterdir()),
+                         ["S1.bam", "S1.bam.bai", "S2.bam", "S2.bam.bai"])
+        self.assertEqual({path: hashlib.sha256(path.read_bytes()).hexdigest() for path in sources}, sources)
+        for sample, names in [("S1", {"lane1", "lane2", "library2"}), ("S2", {"sample2"})]:
+            with self.subTest(sample=sample):
+                header = self.samtools("view", "-H", f"/data/{sample}.bam")
+                self.assertIn("SO:coordinate", header)
+                groups = read_groups(header)
+                self.assertEqual(len(groups), len(names))
+                by_id = {group["ID"]: group for group in groups}
+                records = [line.split("\t") for line in self.samtools("view", f"/data/{sample}.bam").splitlines()]
+                self.assertEqual(len(records), 2 * len(names))
+                self.assertEqual({record[0] for record in records}, names)
+                self.assertEqual([int(record[3]) for record in records],
+                                 [501] * len(names) + [801] * len(names))
+                for record in records:
+                    expected = next(row for row, item in zip(rows, inputs) if item[0] == record[0])
+                    identifier = next(field[5:] for field in record[11:] if field.startswith("RG:Z:"))
+                    group = by_id[identifier]
+                    self.assertEqual((group["SM"], group["LB"], group["PU"]),
+                                     (expected["sample"], expected["library"], f"FC1.{expected['lane']}"))
+                    if record[0] in {"library2", "sample2"}:
+                        self.assertFalse(int(record[1]) & 1024, record)
+                duplicates = [record[0] for record in records if int(record[1]) & 1024]
+                self.assertEqual(len(duplicates), 2 if sample == "S1" else 0)
+                if duplicates:
+                    self.assertEqual(len(set(duplicates)), 1)
+                    self.assertIn(duplicates[0], {"lane1", "lane2"})
+                self.assertEqual(len(self.samtools("view", f"/data/{sample}.bam", "chr1:501-550").splitlines()),
+                                 len(names))
+
     def test_adapter_settings_apply_only_to_the_selected_mates(self):
         adapter1 = "AGATCGGAAGAGCACACGTCT"
         adapter2 = "CTGTCTCTTATACACATCTC"
@@ -214,6 +276,116 @@ class AlignmentTests(unittest.TestCase):
                 result = self.align()
                 self.assertEqual(result.returncode, 0, result.stdout)
                 self.assert_bam_pairs([("adapter", *expected)])
+
+    def test_split_fastq_chunks_preserve_read_groups_when_rows_are_reordered(self):
+        rows = []
+        inputs = [("chunk1", "FC.1", "2"), ("chunk2", "FC.1", "2"), ("other_lane", "FC", "1.2")]
+        for name, flowcell, lane in inputs:
+            self.r1, self.r2 = self.directory / f"{name}_R1.fastq.gz", self.directory / f"{name}_R2.fastq.gz"
+            self.reads([(name, self.chr1[500:600], reverse_complement(self.chr1[800:900]))])
+            rows.append(dict(sample="S1", library="L1", flowcell=flowcell, lane=lane,
+                             fastq_1=str(self.r1), fastq_2=str(self.r2)))
+        previous = None
+        for label, ordered in [("original", rows), ("reordered", rows[::-1])]:
+            self.output = self.directory / label
+            self.sample_rows(ordered)
+            result = self.align()
+            self.assertEqual(result.returncode, 0, result.stdout)
+            header = self.samtools("view", "-H", "/data/S1.bam")
+            groups = read_groups(header)
+            self.assertEqual(len(groups), 2)
+            self.assertEqual({group["PU"] for group in groups}, {"FC%2E1.2", "FC.1%2E2"})
+            by_id = {group["ID"]: group for group in groups}
+            records = [line.split("\t") for line in self.samtools("view", "/data/S1.bam").splitlines()]
+            self.assertEqual(len(records), 6)
+            self.assertEqual(sum(bool(int(record[1]) & 1024) for record in records), 4)
+            identities = {}
+            observed = []
+            for record in records:
+                identifier = next(field[5:] for field in record[11:] if field.startswith("RG:Z:"))
+                group = by_id[identifier]
+                self.assertEqual((group["SM"], group["LB"]), ("S1", "L1"))
+                expected_unit = "FC.1%2E2" if record[0] == "other_lane" else "FC%2E1.2"
+                self.assertEqual(group["PU"], expected_unit)
+                identities[record[0]] = identifier
+                observed.append((record[0], int(record[1]), record[2], int(record[3]), identifier))
+            self.assertEqual(set(identities), {"chunk1", "chunk2", "other_lane"})
+            self.assertEqual(identities["chunk1"], identities["chunk2"])
+            self.assertNotEqual(identities["chunk1"], identities["other_lane"])
+            current = (sorted(tuple(sorted(group.items())) for group in groups), sorted(observed))
+            if previous is not None:
+                self.assertEqual(current, previous)
+            previous = current
+
+    def test_reference_to_multi_sample_bams_with_mixed_adapter_rows(self):
+        # setUpClass prepares the shared bundle through the public reference workflow.
+        adapter1 = "AGATCGGAAGAGCACACGTCT"
+        adapter2 = "CTGTCTCTTATACACATCTC"
+        first = self.chr1[100:200]
+        second = reverse_complement(self.chr1[300:400])
+        raw_first, raw_second = first + adapter1 + "GGTT", second + adapter2
+        inputs = [
+            ("blank", "S1", "1", "", raw_first, raw_second),
+            ("r1", "S1", "2", f"r1_adapter={adapter1}", first, raw_second),
+            ("r2", "S2", "1", f"r2_adapter={adapter2}", raw_first, second),
+            ("both", "S2", "2", f"r1_adapter={adapter1};r2_adapter={adapter2}", first, second),
+        ]
+        rows = []
+        sources = {}
+        for name, sample, lane, options, _, _ in inputs:
+            self.r1, self.r2 = self.directory / f"{name}_R1.fastq.gz", self.directory / f"{name}_R2.fastq.gz"
+            self.reads([(name, raw_first, raw_second), (f"{name}_short", first[:14], second)])
+            rows.append(dict(sample=sample, library="L1", flowcell="FC1", lane=lane,
+                             fastq_1=str(self.r1), fastq_2=str(self.r2), options=options))
+            sources.update({path: hashlib.sha256(path.read_bytes()).hexdigest()
+                            for path in [self.r1, self.r2]})
+        self.sample_rows(rows)
+        result = self.align()
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(sorted(path.name for path in self.output.iterdir()),
+                         ["S1.bam", "S1.bam.bai", "S2.bam", "S2.bam.bai"])
+        self.assertEqual({path: hashlib.sha256(path.read_bytes()).hexdigest() for path in sources}, sources)
+        for sample in ["S1", "S2"]:
+            expected = [(name, expected_first, expected_second)
+                        for name, owner, _, _, expected_first, expected_second in inputs if owner == sample]
+            self.assert_bam_pairs(expected, sample)
+            groups = read_groups(self.samtools("view", "-H", f"/data/{sample}.bam"))
+            self.assertEqual(len(groups), 2)
+            by_id = {group["ID"]: group for group in groups}
+            records = [line.split("\t") for line in self.samtools("view", f"/data/{sample}.bam").splitlines()]
+            for record in records:
+                identifier = next(field[5:] for field in record[11:] if field.startswith("RG:Z:"))
+                group = by_id[identifier]
+                expected_lane = next(lane for name, _, lane, _, _, _ in inputs if name == record[0])
+                self.assertEqual((group["SM"], group["LB"], group["PU"]), (sample, "L1", f"FC1.{expected_lane}"))
+            self.assertEqual(len(self.samtools("view", f"/data/{sample}.bam", "chr1:101-150").splitlines()), 2)
+
+    def test_rejects_invalid_later_rows_before_processing_valid_rows(self):
+        self.reads([("known", self.chr1[100:200], reverse_complement(self.chr1[300:400]))])
+        sources = {path: hashlib.sha256(path.read_bytes()).hexdigest() for path in [self.r1, self.r2]}
+        self.samples(options="")
+        with self.sheet.open(newline="") as handle:
+            original = next(csv.DictReader(handle))
+        for changes, expected in [
+            ({"library": ""}, "missing library"),
+            ({"options": "adapter=ACGT"}, "unknown option 'adapter'"),
+            ({"fastq_1": "*.gz"}, "fastq_1 must name one .gz file with a safe basename"),
+            ({"options": None}, "expected 7 columns, found 6"),
+        ]:
+            with self.subTest(changes=changes):
+                row = dict(original, **changes)
+                if row["options"] is None:
+                    del row["options"]
+                with self.sheet.open("w", newline="") as handle:
+                    writer = csv.writer(handle)
+                    writer.writerow(original)
+                    writer.writerow(original.values())
+                    writer.writerow(row.values())
+                result = self.align()
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertIn(f"Sample-sheet row 3: {expected}", result.stdout)
+                self.assertFalse(self.output.exists())
+                self.assertEqual({path: hashlib.sha256(path.read_bytes()).hexdigest() for path in sources}, sources)
 
     def test_adapter_removal_filters_pairs_after_trimming_at_14_15_bases(self):
         adapter1 = "AGATCGGAAGAGCACACGTCT"
@@ -264,15 +436,33 @@ class AlignmentTests(unittest.TestCase):
                 self.assertEqual(self.samtools("view", "/data/S1.bam", "chr1:1-6000"), "")
                 self.assertIn("\tSM:S1", self.samtools("view", "-H", "/data/S1.bam"))
 
-    def test_rejects_multiple_rows_explicitly(self):
+    def test_rejects_repeated_fastq_pairs(self):
         self.reads([("known", self.chr1[100:200], reverse_complement(self.chr1[300:400]))])
         self.samples()
         with self.sheet.open("a") as handle:
             handle.write(self.sheet.read_text().splitlines()[1] + "\n")
         result = self.align()
         self.assertNotEqual(result.returncode, 0, result.stdout)
-        self.assertIn("Unsupported input: expected exactly one sample-sheet row", result.stdout)
+        self.assertIn("Sample-sheet row 3: FASTQ file already used in row 2", result.stdout)
         self.assertFalse((self.output / "S1.bam").exists())
+
+    def test_rejects_conflicting_read_groups_for_aliased_fastqs(self):
+        self.reads([("known", self.chr1[100:200], reverse_complement(self.chr1[300:400]))])
+        sources = {path: hashlib.sha256(path.read_bytes()).hexdigest() for path in [self.r1, self.r2]}
+        self.samples()
+        with self.sheet.open(newline="") as handle:
+            row = next(csv.DictReader(handle))
+        alias = self.directory / "alias-R1.fastq.gz"
+        alias.symlink_to(self.r1)
+        row.update(library="L2", fastq_1=str(alias))
+        with self.sheet.open("a", newline="") as handle:
+            csv.DictWriter(handle, fieldnames=list(row)).writerow(row)
+        result = self.align()
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("Sample-sheet row 3: FASTQ file already used in row 2", result.stdout)
+        self.assertIn("repeated or conflicting read-group assignment", result.stdout)
+        self.assertEqual({path: hashlib.sha256(path.read_bytes()).hexdigest() for path in sources}, sources)
+        self.assertFalse(self.output.exists())
 
     def test_rejects_missing_or_unsafe_metadata(self):
         self.reads([("known", self.chr1[100:200], reverse_complement(self.chr1[300:400]))])

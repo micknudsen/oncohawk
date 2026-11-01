@@ -39,6 +39,11 @@
             "branch": "master",
             "git_sha": "20c6e6407f63748003b47f92837b64fb0a53ffa4",
             "installed_by": ["modules"]
+          },
+          "samtools/merge": {
+            "branch": "master",
+            "git_sha": "20c6e6407f63748003b47f92837b64fb0a53ffa4",
+            "installed_by": ["modules"]
           }
         }
       }
