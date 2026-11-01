@@ -53,6 +53,7 @@ workflow {
         workflow: [repository: workflow.manifest.name, version: workflow.manifest.version,
                    nextflow: nextflow.version.toString(), commit: workflow.commitId, source_sha256: source_hashes],
         modules: modules.repos['https://github.com/nf-core/modules.git'].modules['nf-core']
+            .subMap(['gunzip', 'bedtools/maskfasta', 'bwamem2/index'])
     ])
     versions = GUNZIP.out.versions_gunzip
         .mix(BEDTOOLS_MASKFASTA.out.versions_bedtools, BWAMEM2_INDEX.out.versions_bwamem2)
