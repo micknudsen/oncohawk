@@ -1,4 +1,4 @@
-name: Documentation
+name: CI
 
 on:
   pull_request:
@@ -10,9 +10,13 @@ permissions:
 
 jobs:
   documentation:
+    # Preserve the existing required branch-protection context as checks expand.
     name: Documentation checks
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      NXF_VER: '26.10.4'
+      NXF_ANSI_LOG: 'false'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -23,3 +27,29 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ github.sha }}
         run: git diff --check "$BASE_SHA" "$HEAD_SHA"
+      - name: Set up Java
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '21.0.13+9'
+      - name: Install pinned Nextflow distribution
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          curl --fail --location --retry 3 \
+            https://github.com/nextflow-io/nextflow/releases/download/v26.10.4/nextflow-26.10.4-dist \
+            --output "$RUNNER_TEMP/bin/nextflow"
+          # SHA256 published in the official GitHub release asset metadata.
+          echo "2cbda6e7fdbbb1e7a413973eff549653f566ba6bb7bdfbb58eb78d0f831fdec4  $RUNNER_TEMP/bin/nextflow" | sha256sum --check --strict
+          chmod +x "$RUNNER_TEMP/bin/nextflow"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: Check runtime versions
+        run: |
+          python3 -c 'import sys; assert sys.version_info[:2] == (3, 12), sys.version; print(sys.version)'
+          java -version
+          nextflow -version
+          docker info
+      - name: Test public reference workflow
+        run: python3 -m unittest discover -s tests -v
+      - name: Verify pristine pinned nf-core modules
+        run: python3 scripts/check_modules.py

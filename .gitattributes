@@ -1,0 +1,2 @@
+# Upstream modules remain byte-identical; CI verifies the pinned Git objects.
+modules/nf-core/** -whitespace
