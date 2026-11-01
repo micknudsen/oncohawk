@@ -14,7 +14,7 @@ Two runnable Nextflow entry points: reference preparation and alignment. Alignme
 | --- | --- | --- |
 | Local development | Mac with Docker | Small synthetic FASTA, matching exclusion BED, and paired reads that fit local memory. |
 | Required CI | Containerized test runner | The same compact synthetic fixtures; no full-human-reference job. |
-| Production and full-reference verification | SLURM HPC with Apptainer | The selected NCBI reference bundle; modest synthetic reads for validation and production inputs for routine use. |
+| Production and informal user checks | SLURM HPC with Apptainer | The selected NCBI reference bundle and the user's inputs; HPC checks are not acceptance criteria. |
 
 Keep the workflow logic and pristine modules shared. Profiles configure the executor, container backend, resources, and filesystem settings. Full-human-reference preparation and alignment belong on the HPC; local tests use a small reference as well as small read sets.
 
@@ -24,15 +24,15 @@ Keep the workflow logic and pristine modules shared. Profiles configure the exec
 
 Create a minimal Nextflow project, a local Docker profile, a production SLURM/Apptainer profile, and a compact synthetic reference/BED/read fixture. Install suitable nf-core modules through the CLI and pin compatible workflow, module, tool/container, and test-tool versions. Keep all changes outside upstream modules.
 
-Check actual Docker execution early on the Mac, including bwa-mem2 indexing and mapping on the tiny synthetic reference. This Mac reports ARM64; [bwa-mem2's upstream build](https://github.com/bwa-mem2/bwa-mem2/blob/master/Makefile) targets x86 SIMD. Successful execution on this Mac must be demonstrated before claiming local support. Set local resource/concurrency limits to fit available memory. Configure SLURM paths and resources for the production cluster; record which profiles were actually exercised.
+Check actual Docker execution early on the Mac, including bwa-mem2 indexing and mapping on the tiny synthetic reference. This Mac reports ARM64; [bwa-mem2's upstream build](https://github.com/bwa-mem2/bwa-mem2/blob/master/Makefile) targets x86 SIMD. Successful execution on this Mac must be demonstrated before claiming local support. Set local resource/concurrency limits to fit available memory. Provide configurable SLURM paths and resource settings for the user's cluster; HPC access and actual execution are not completion prerequisites.
 
 Use protected `master`, required GitHub Actions checks, squash-only merging, and linear history, with focused feature PRs for milestone changes. The empty repository's one-time bootstrap commit and documentation publication were separately authorized on 2026-11-01; subsequent changes enter `master` through PRs. Keep required checks appropriate to each stage and verify their enforcement as they evolve.
 
 ### 2. Prepare the reference bundle
 
-Develop reference preparation locally against the small synthetic fixture. For the production bundle, acquire the exact NCBI FASTA and BED from Q2 and run decompression, exclusion masking, and bwa-mem2 indexing on the HPC with Apptainer. Use suitable upstream modules, including [gunzip](https://nf-co.re/modules/gunzip), `bedtools/maskfasta`, and `bwamem2/index`; acquisition and compatibility checks are routine implementation work.
+Develop reference preparation locally against the small synthetic fixture. Support acquiring the exact NCBI FASTA and BED from Q2 and running decompression, exclusion masking, and bwa-mem2 indexing with the production SLURM/Apptainer profile. Use suitable upstream modules, including [gunzip](https://nf-co.re/modules/gunzip), `bedtools/maskfasta`, and `bwamem2/index`; acquisition and compatibility handling are routine implementation work. The user runs the full-reference path on the HPC; its execution is not an acceptance gate.
 
-Inspect the actual BED against the selected FASTA. Distinguish intentionally absent ALT sequences from unexpected name/coordinate mismatches, recording any excluded BED entries. Publish the masked FASTA, alignment indexes, and a small provenance file with relative artifact paths, source URLs/checksums, and tool/module versions. Add further reference assets only when a milestone step needs them.
+Validate the supplied BED against its FASTA during reference preparation. Distinguish intentionally absent ALT sequences from unexpected name/coordinate mismatches, recording any excluded BED entries. Publish the masked FASTA, alignment indexes, and a small provenance file with relative artifact paths, source URLs/checksums, and tool/module versions. Test this behavior with compact fixtures, without requiring a full-reference HPC run. Add further reference assets only when a milestone step needs them.
 
 ### 3. Connect the sequencing-to-BAM path
 
@@ -42,7 +42,7 @@ Compose the verified modules: shared `cutadapt` → `bwamem2/mem` with sorted BA
 
 ### 4. Verify and document the usable path
 
-Run real reference-to-BAM tests locally with Docker and in required CI, using the compact synthetic reference/BED/read fixtures; production defaults remain the chosen NCBI assets. Separately, prepare the actual NCBI bundle and align a modest synthetic read set against it on the SLURM HPC with Apptainer. Record results, commands, versions, and untested execution environments. Provide a short README with local test and HPC preparation/alignment examples.
+Run real reference-to-BAM tests locally with Docker and in required CI, using the compact synthetic reference/BED/read fixtures; production defaults remain the chosen NCBI assets. Provide local test and SLURM/Apptainer reference-preparation/alignment examples. The user checks HPC operation informally during development and reports problems; do not require HPC runs, evidence, or sign-off. Record executed test results accurately and proceed without an HPC blocker when no problem is reported.
 
 ## Acceptance checks
 
@@ -57,7 +57,7 @@ The confirmed testing boundaries are the public reference-preparation and alignm
 | Duplicates | Designed duplicates spanning lanes in one library are flagged; matching coordinates in distinct libraries are not grouped together. Duplicate reads remain in the BAM. |
 | Final output | One BAM per sample, coordinate order verified, final index usable for a regional query, and expected records/flags retained. |
 
-Successful exit codes alone do not satisfy these checks. Required CI grows with the staged PRs: scaffold and reference-preparation PRs run their meaningful checks, and the complete reference-to-BAM fixture becomes required when that path is introduced. Every PR must pass all checks required at its stage. The separate HPC run establishes that the selected full-reference path works beyond the fixture; it is not a full-genome requirement for local development or per-PR CI.
+Successful exit codes alone do not satisfy these checks. Required CI grows with the staged PRs: scaffold and reference-preparation PRs run their meaningful checks, and the complete reference-to-BAM fixture becomes required when that path is introduced. Every PR must pass all checks required at its stage. HPC/SLURM/Apptainer tests are never formal acceptance criteria for tickets, PRs, or this milestone; the user's informal checks run alongside development.
 
 ## Current verification status
 

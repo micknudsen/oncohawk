@@ -52,9 +52,11 @@ Produce one coordinate-sorted, indexed BAM per sample, combining the sample's ro
 ## Execution environments
 
 - **Development:** local Mac with Docker. Use small synthetic reference sequences, a matching exclusion BED, and synthetic paired reads. Local development and tests must fit the Mac's memory; do not require full-human-reference bwa-mem2 indexing or alignment locally.
-- **Production:** SLURM HPC with Apptainer. Prepare the full selected NCBI reference bundle and run full-reference alignment here, including validation with modest synthetic read sets.
+- **Production:** SLURM HPC with Apptainer. Support preparation of the full selected NCBI reference bundle and full-reference alignment here.
 
 Use the same workflow logic and pristine modules in both environments, with execution profiles supplying environment-specific settings and test fixtures supplying the smaller local data. Conda execution is unsupported. Clarified directly by the user on 2026-11-01.
+
+Formal acceptance uses compact synthetic tests on the development Mac with Docker and in required CI. The user checks SLURM/Apptainer operation informally during development and reports problems. HPC execution, access, run evidence, or explicit sign-off must never be required for ticket acceptance, merging, or milestone completion. In the absence of reported problems, continue without an HPC blocker; this is not a claim that the agent verified an HPC run. Clarified directly by the user during ticket planning on 2026-11-01.
 
 ## Development constraints
 
