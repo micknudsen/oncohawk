@@ -32,9 +32,12 @@ def validate(fasta, bed, archive, policy):
     lengths = {}
     name = None
     with fasta.open() as handle:
-        for line in handle:
+        for number, line in enumerate(handle, 1):
             if line.startswith(">"):
-                name = line[1:].split()[0]
+                header = line[1:].split()
+                if not header:
+                    raise ValueError(f"FASTA line {number}: missing sequence name")
+                name = header[0]
                 if name in lengths:
                     raise ValueError(f"FASTA has repeated contig '{name}'")
                 lengths[name] = 0

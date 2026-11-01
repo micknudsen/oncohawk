@@ -62,4 +62,3 @@ workflow {
         REFERENCE_VALIDATE.out.report, metadata, versions, file("$projectDir/bin/package_reference.py")
     )
 }
-

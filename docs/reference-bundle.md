@@ -10,6 +10,8 @@ The modules were installed with nf-core CLI **4.2.1** at upstream revision `20c6
 
 The custom validation and packaging steps implement Oncohawk's input and bundle contracts; their runtime is `python:3.12.16-bookworm@sha256:a5bab0ff300f91231c2e68bf73a8a8d60762ac39ce1c50eaf6803e4c38a9062b`. Bioinformatics operations remain in the pristine upstream modules. Executed tool versions and workflow source hashes are recorded in each bundle.
 
+Required CI checks every installed module file against its pinned upstream Git object, including missing or added files. Upstream snapshots contain trailing whitespace, so `.gitattributes` exempts only `modules/nf-core/` from whitespace formatting checks; the stricter upstream integrity check protects those bytes. Project code and documentation retain whitespace checks.
+
 ## Inputs and masking
 
 | Parameter | Meaning |

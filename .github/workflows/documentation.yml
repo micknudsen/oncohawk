@@ -51,3 +51,5 @@ jobs:
           docker info
       - name: Test public reference workflow
         run: python3 -m unittest discover -s tests -v
+      - name: Verify pristine pinned nf-core modules
+        run: python3 scripts/check_modules.py

@@ -166,6 +166,14 @@ class ReferencePreparationTests(unittest.TestCase):
         self.assertIn("output directory already exists", result.stdout)
         self.assertEqual(sentinel.read_text(), "existing bundle")
 
+    def test_rejects_empty_fasta_name_clearly(self):
+        with gzip.open(self.fasta, "wt") as handle:
+            handle.write(">   \nACGT\n")
+        result = self.prepare()
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("FASTA line 1: missing sequence name", result.stdout)
+        self.assertFalse((self.bundle / "bundle.json").exists())
+
 
 if __name__ == "__main__":
     unittest.main()
