@@ -86,6 +86,21 @@ class AlignmentTests(unittest.TestCase):
             "-v", f"{self.output}:/data:ro", SAMTOOLS, "samtools", *arguments,
         ], text=True)
 
+    def assert_bam_pairs(self, expected):
+        records = [line.split("\t") for line in self.samtools("view", "/data/S1.bam").splitlines()]
+        self.assertEqual(len(records), len(expected) * 2)
+        observed = {}
+        for record in records:
+            flag = int(record[1])
+            self.assertFalse(flag & (256 | 2048), record)
+            self.assertTrue(flag & 1, record)
+            self.assertIn(flag & (64 | 128), [64, 128], record)
+            mate = 1 if flag & 64 else 2
+            observed[record[0], mate] = reverse_complement(record[9]) if flag & 16 else record[9]
+        self.assertEqual(observed, {(name, mate): sequence
+                                    for name, first, second in expected
+                                    for mate, sequence in [(1, first), (2, second)]})
+
     def test_reference_to_bam_maps_known_pair_with_read_group(self):
         self.reads([("known", self.chr1[100:200], reverse_complement(self.chr1[300:400]))])
         self.samples()
@@ -179,10 +194,48 @@ class AlignmentTests(unittest.TestCase):
         self.assertEqual(len(set(duplicate_names)), 1)
         self.assertEqual([int(record[3]) for record in records], [501, 501, 801, 801])
 
+    def test_adapter_settings_apply_only_to_the_selected_mates(self):
+        adapter1 = "AGATCGGAAGAGCACACGTCT"
+        adapter2 = "CTGTCTCTTATACACATCTC"
+        first = self.chr1[100:200]
+        second = reverse_complement(self.chr1[300:400])
+        raw_first, raw_second = first + adapter1 + "GGTT", second + adapter2
+        self.reads([("adapter", raw_first, raw_second)])
+        for label, settings, expected in [
+            ("r1", {"options": f"r1_adapter={adapter1}"}, (first, raw_second)),
+            ("r2", {"options": f"r2_adapter={adapter2}"}, (raw_first, second)),
+            ("both", {"options": f" r2_adapter = {adapter2[:-1].lower()}n ; r1_adapter = {adapter1.lower()} "},
+             (first, second)),
+            ("omitted", {}, (raw_first, raw_second)),
+        ]:
+            with self.subTest(settings=label):
+                self.output = self.directory / label
+                self.samples(**settings)
+                result = self.align()
+                self.assertEqual(result.returncode, 0, result.stdout)
+                self.assert_bam_pairs([("adapter", *expected)])
+
+    def test_adapter_removal_filters_pairs_after_trimming_at_14_15_bases(self):
+        adapter1 = "AGATCGGAAGAGCACACGTCT"
+        adapter2 = "CTGTCTCTTATACACATCTC"
+        first = self.chr1[100:200]
+        second = reverse_complement(self.chr1[300:400])
+        self.reads([
+            ("r1_short", first[:14] + adapter1, second + adapter2),
+            ("r2_short", first + adapter1, second[:14] + adapter2),
+            ("exactly15", first[:15] + adapter1, second[:15] + adapter2),
+            ("partial", first + adapter1[:10], second + adapter2[:10]),
+        ])
+        self.samples(options=f"r1_adapter={adapter1};r2_adapter={adapter2}")
+        result = self.align()
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assert_bam_pairs([("exactly15", first[:15], second[:15]), ("partial", first, second)])
+
     def test_split_read_keeps_complete_sequence_with_supplementary_soft_clipping(self):
         split = self.chr1[1000:1100] + self.chr2[2000:2100]
-        self.reads([("split", split, reverse_complement(self.chr1[1300:1400]))])
-        self.samples()
+        adapter = "AGATCGGAAGAGCACACGTCT"
+        self.reads([("split", split + adapter, reverse_complement(self.chr1[1300:1400]))])
+        self.samples(options=f"r1_adapter={adapter}")
         result = self.align()
         self.assertEqual(result.returncode, 0, result.stdout)
         records = [line.split("\t") for line in self.samtools("view", "/data/S1.bam").splitlines()]
@@ -197,21 +250,22 @@ class AlignmentTests(unittest.TestCase):
             self.assertEqual(sequence, split)
 
     def test_all_filtered_pairs_produce_an_empty_indexed_bam(self):
-        self.reads([("discarded", self.chr1[100:114], self.chr1[300:400])])
-        self.samples()
-        result = self.align()
-        self.assertEqual(result.returncode, 0, result.stdout)
-        self.assertEqual(self.samtools("view", "-c", "/data/S1.bam").strip(), "0")
-        self.assertEqual(self.samtools("view", "/data/S1.bam", "chr1:1-6000"), "")
-        self.assertIn("\tSM:S1", self.samtools("view", "-H", "/data/S1.bam"))
+        adapter = "AGATCGGAAGAGCACACGTCT"
+        for label, tail, settings in [
+            ("length_only", "", {}), ("adapter", adapter, {"options": f"r1_adapter={adapter}"}),
+        ]:
+            with self.subTest(settings=label):
+                self.output = self.directory / label
+                self.reads([("discarded", self.chr1[100:114] + tail, self.chr1[300:400])])
+                self.samples(**settings)
+                result = self.align()
+                self.assertEqual(result.returncode, 0, result.stdout)
+                self.assertEqual(self.samtools("view", "-c", "/data/S1.bam").strip(), "0")
+                self.assertEqual(self.samtools("view", "/data/S1.bam", "chr1:1-6000"), "")
+                self.assertIn("\tSM:S1", self.samtools("view", "-H", "/data/S1.bam"))
 
-    def test_rejects_multiple_rows_and_nonblank_options_explicitly(self):
+    def test_rejects_multiple_rows_explicitly(self):
         self.reads([("known", self.chr1[100:200], reverse_complement(self.chr1[300:400]))])
-        self.samples(options="r1_adapter=ACGT")
-        result = self.align()
-        self.assertNotEqual(result.returncode, 0, result.stdout)
-        self.assertIn("Unsupported input: nonblank options", result.stdout)
-        self.assertFalse((self.output / "S1.bam").exists())
         self.samples()
         with self.sheet.open("a") as handle:
             handle.write(self.sheet.read_text().splitlines()[1] + "\n")
@@ -259,11 +313,40 @@ class AlignmentTests(unittest.TestCase):
         sheets = self.directory / "sample sheets"
         sheets.mkdir()
         self.sheet = sheets / "samples.csv"
+        pairs = [("known", self.chr1[100:200] + "AGATCGGAAGAGCACACGTCT",
+                  reverse_complement(self.chr1[300:400]) + "CTGTCTCTTATACACATCTC")]
+        self.reads(pairs)
+        for label, options in [("empty", ""), ("whitespace", " ")]:
+            with self.subTest(options=label):
+                self.output = self.directory / label
+                self.samples(fastq_1="../reads, folder/R1.fastq.gz",
+                             fastq_2="../reads, folder/R2.fastq.gz", options=options)
+                result = self.align()
+                self.assertEqual(result.returncode, 0, result.stdout)
+                self.assert_bam_pairs(pairs)
+
+    def test_rejects_malformed_unknown_repeated_or_nonsequence_options(self):
         self.reads([("known", self.chr1[100:200], reverse_complement(self.chr1[300:400]))])
-        self.samples(fastq_1="../reads, folder/R1.fastq.gz", fastq_2="../reads, folder/R2.fastq.gz", options="")
-        result = self.align()
-        self.assertEqual(result.returncode, 0, result.stdout)
-        self.assertEqual(self.samtools("view", "-c", "/data/S1.bam").strip(), "2")
+        for options, expected in [
+            ("r1_adapter", "malformed options"), ("=ACGT", "malformed options"),
+            ("r1_adapter=", "malformed options"), ("r1_adapter=ACGT=ACGT", "malformed options"),
+            ("r1_adapter=ACGT;", "malformed options"),
+            ("r1_adapter=ACGT;;r2_adapter=ACGT", "malformed options"),
+            ("adapter=ACGT", "unknown option 'adapter'"),
+            ("r1_adapter=ACGT;r1_adapter=TGCA", "repeated option 'r1_adapter'"),
+            ("r2_adapter=ACGT;r2_adapter=TGCA", "repeated option 'r2_adapter'"),
+            ("r1_adapter=ACGT$", "r1_adapter must be a DNA IUPAC sequence"),
+            ("r2_adapter=ACGTX", "r2_adapter must be a DNA IUPAC sequence"),
+            ("r1_adapter=ACGT...TGCA", "r1_adapter must be a DNA IUPAC sequence"),
+            ("r1_adapter=ACGT$(true)", "r1_adapter must be a DNA IUPAC sequence"),
+            ("r1_adapter=ACGT --quality-cutoff 20", "r1_adapter must be a DNA IUPAC sequence"),
+        ]:
+            with self.subTest(options=options):
+                self.samples(options=options)
+                result = self.align()
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertIn(f"Sample-sheet row 2: {expected}", result.stdout)
+                self.assertFalse((self.output / "S1.bam").exists())
 
     def test_rejects_unusable_fastq_paths_and_propagates_tool_failure(self):
         self.reads([("known", self.chr1[100:200], reverse_complement(self.chr1[300:400]))])
