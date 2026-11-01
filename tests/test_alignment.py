@@ -2,6 +2,7 @@
 
 import csv
 import gzip
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -102,6 +103,37 @@ class AlignmentTests(unittest.TestCase):
         identifier = next(field[3:] for field in group.split("\t") if field.startswith("ID:"))
         self.assertTrue(all(f"RG:Z:{identifier}" in record for record in records))
         self.assertEqual(len(self.samtools("view", "/data/S1.bam", "chr1:101-150").splitlines()), 1)
+
+    def test_valid_sample_name_cannot_collide_with_internal_mapped_bam(self):
+        self.reads([("known", self.chr1[100:200], reverse_complement(self.chr1[300:400]))])
+        self.samples(sample="input1.mapped")
+        result = self.align()
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(self.samtools("view", "-c", "/data/input1.mapped.bam").strip(), "2")
+        self.assertIn("\tSM:input1.mapped", self.samtools("view", "-H", "/data/input1.mapped.bam"))
+
+    def test_already_trimmed_input_names_are_preserved(self):
+        self.r1 = self.directory / "input1_1.trim.fastq.gz"
+        self.r2 = self.directory / "input1_2.trim.fastq.gz"
+        self.reads([("known", self.chr1[100:200], reverse_complement(self.chr1[300:400]))])
+        expected = [hashlib.sha256(path.read_bytes()).hexdigest() for path in [self.r1, self.r2]]
+        self.samples()
+        result = self.align()
+        self.assertEqual([hashlib.sha256(path.read_bytes()).hexdigest() for path in [self.r1, self.r2]], expected)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(self.samtools("view", "-c", "/data/S1.bam").strip(), "2")
+
+    def test_internal_output_prefix_is_rejected_for_source_basenames(self):
+        self.r1 = self.directory / "_input1_1.trim.fastq.gz"
+        self.r2 = self.directory / "_input1_2.trim.fastq.gz"
+        self.reads([("known", self.chr1[100:200], reverse_complement(self.chr1[300:400]))])
+        expected = [hashlib.sha256(path.read_bytes()).hexdigest() for path in [self.r1, self.r2]]
+        self.samples()
+        result = self.align()
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("safe basename", result.stdout)
+        self.assertEqual([hashlib.sha256(path.read_bytes()).hexdigest() for path in [self.r1, self.r2]], expected)
+        self.assertFalse((self.output / "S1.bam").exists())
 
     def test_filters_whole_pairs_at_the_14_15_base_boundary(self):
         first = self.chr1[100:200]
