@@ -9,9 +9,8 @@ permissions:
   contents: read
 
 jobs:
-  documentation:
-    # Preserve the existing required branch-protection context as checks expand.
-    name: Documentation checks
+  validation:
+    name: Tests and validation
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
