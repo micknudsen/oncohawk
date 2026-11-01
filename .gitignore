@@ -1,2 +1,6 @@
 # Local session prompt and notes
 /.local/
+/.nextflow*
+/work/
+/reference-bundle/
+__pycache__/
