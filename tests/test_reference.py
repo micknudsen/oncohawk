@@ -35,7 +35,7 @@ class ReferencePreparationTests(unittest.TestCase):
             os.environ.get("NEXTFLOW", "nextflow"), "run", str(PROJECT / "pipelines/reference"),
             "-profile", "docker,test",
             "-with-trace", str(self.directory / f"trace-{self.run_count}.tsv"),
-            "--fasta", str(self.fasta), "--bed", str(self.bed),
+            "--fasta", str(self.fasta), "--exclusions_bed", str(self.bed),
             *(["--outdir", str(self.bundle)] if not default_output else []), *arguments,
         ]
         result = subprocess.run(command, cwd=launch_directory or self.directory, text=True,
@@ -64,13 +64,14 @@ class ReferencePreparationTests(unittest.TestCase):
         self.assertEqual((self.bundle / "bwamem2/reference.fa.amb").read_text().splitlines(),
                          ["36 2 2", "4 4 N", "20 2 N"])
         manifest = json.loads((self.bundle / "bundle.json").read_text())
-        self.assertEqual(manifest["format_version"], 1)
+        self.assertEqual(next(iter(manifest)), "bundle_format_version")
+        self.assertEqual(manifest["bundle_format_version"], 1)
         self.assertEqual(manifest["fasta"], "reference.fa")
         self.assertEqual(manifest["bwamem2_index"], "bwamem2/reference.fa")
-        self.assertEqual(manifest["omitted_bed_entries"], [])
+        self.assertEqual(manifest["omitted_exclusions_bed_entries"], [])
         self.assertEqual(manifest["sources"]["fasta"]["uri"], str(self.fasta))
         self.assertEqual(manifest["sources"]["fasta"]["sha256"], hashlib.sha256(self.fasta.read_bytes()).hexdigest())
-        self.assertEqual(manifest["sources"]["bed"]["sha256"], hashlib.sha256(self.bed.read_bytes()).hexdigest())
+        self.assertEqual(manifest["sources"]["exclusions_bed"]["sha256"], hashlib.sha256(self.bed.read_bytes()).hexdigest())
         self.assertEqual(manifest["workflow"]["nextflow"], "26.10.4")
         self.assertEqual({entry["tool"] for entry in manifest["tools"]}, {"gunzip", "bedtools", "bwamem2"})
         self.assertTrue(all(entry["version"] for entry in manifest["tools"]))
@@ -94,13 +95,6 @@ class ReferencePreparationTests(unittest.TestCase):
         result = self.prepare(default_output=True)
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertTrue((self.directory / "reference/bundle.json").is_file())
-
-    def test_rejects_unknown_bed_contig(self):
-        self.bed.write_text("chrTypo\t0\t2\n")
-        result = self.prepare()
-        self.assertNotEqual(result.returncode, 0, result.stdout)
-        self.assertIn("BED line 1: unknown contig 'chrTypo'", result.stdout)
-        self.assertFalse((self.bundle / "bundle.json").exists())
 
     def test_rejects_invalid_bed_coordinates(self):
         for interval in ["-1\t2", "4\t21", "8\t4", "4\t4", "x\t8"]:
@@ -138,32 +132,36 @@ class ReferencePreparationTests(unittest.TestCase):
         self.assertIn("FASTA checksum mismatch", result.stdout)
         self.assertFalse((self.bundle / "bundle.json").exists())
 
-    def test_records_explicit_ncbi_alt_omission(self):
+    def test_records_all_missing_exclusions_contigs(self):
         self.bed.write_text(
-            'track name="GRC exclusions"\nchr10_KI270825v1_alt\t0\t188315\tcontamination\nchr1\t4\t8\n'
+            'track name="exclusions"\nchr10_KI270825v1_alt\t0\t188314\tcontamination\n'
+            'chr1\t4\t8\nchrMissing\t2\t7\nchrMissing\t8\t10\n'
         )
-        result = self.prepare("--allow_ncbi_alt_omission", "true")
+        result = self.prepare()
         self.assertEqual(result.returncode, 0, result.stdout)
         manifest = json.loads((self.bundle / "bundle.json").read_text())
-        self.assertEqual(len(manifest["omitted_bed_entries"]), 1)
-        omitted = manifest["omitted_bed_entries"][0]
-        self.assertEqual([omitted[key] for key in ["line", "contig", "start", "end"]],
-                         [2, "chr10_KI270825v1_alt", 0, 188315])
-        self.assertIn("operator", omitted["reason"])
+        self.assertEqual(manifest["omitted_exclusions_bed_entries"], [
+            {"line": 2, "contig": "chr10_KI270825v1_alt", "start": 0, "end": 188314,
+             "reason": "Contig missing in FASTA"},
+            {"line": 4, "contig": "chrMissing", "start": 2, "end": 7,
+             "reason": "Contig missing in FASTA"},
+            {"line": 5, "contig": "chrMissing", "start": 8, "end": 10,
+             "reason": "Contig missing in FASTA"},
+        ])
+        self.assertIn("ACGTNNNNACGTACGTACGT", (self.bundle / "reference.fa").read_text())
         self.assertIsNone(manifest["sources"]["fasta"]["verified_checksum"])
 
-    def test_rejects_undeclared_or_changed_alt_omission(self):
-        cases = [("chr10_KI270825v1_alt", 188315, []),
-                 ("chr10_KI270825v1_alt", 188315, ["--allow_ncbi_alt_omission", "false"]),
-                 ("chr10_KI270825v1_alt", 188314, ["--allow_ncbi_alt_omission", "true"]),
-                 ("chr10_KI270826v1_alt", 188315, ["--allow_ncbi_alt_omission", "true"])]
-        for contig, end, options in cases:
-            with self.subTest(contig=contig, end=end, options=options):
-                self.bed.write_text(f"{contig}\t0\t{end}\n")
-                result = self.prepare(*options)
-                self.assertNotEqual(result.returncode, 0, result.stdout)
-                self.assertIn("unknown contig", result.stdout)
-                self.assertFalse((self.bundle / "bundle.json").exists())
+    def test_accepts_exclusions_with_only_missing_contigs(self):
+        self.bed.write_text("chrMissing\t0\t5\n")
+        result = self.prepare()
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual((self.bundle / "reference.fa").read_text(),
+                         ">chr1\nACGTACGTACGTACGTACGT\n>chr2\nTTTTCCCCAAAAGGGG\n")
+        manifest = json.loads((self.bundle / "bundle.json").read_text())
+        self.assertEqual(manifest["omitted_exclusions_bed_entries"], [
+            {"line": 1, "contig": "chrMissing", "start": 0, "end": 5,
+             "reason": "Contig missing in FASTA"},
+        ])
 
     def test_accepts_uncompressed_reference_without_changing_input(self):
         original = gzip.decompress(self.fasta.read_bytes())

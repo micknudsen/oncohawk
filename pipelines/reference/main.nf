@@ -21,28 +21,23 @@ workflow {
     repository = projectDir.parent.parent
     if (file(params.outdir).exists())
         error('Reference bundle output directory already exists; choose a new --outdir')
-    allow_alt = params.allow_ncbi_alt_omission.toString()
-    if (!(allow_alt in ['true', 'false']))
-        error('--allow_ncbi_alt_omission must be true or false')
     ncbi_base = 'https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/'
     official_fasta = params.fasta == ncbi_base + 'GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.gz'
-    official_bed = params.bed == ncbi_base + 'GCA_000001405.15_GRCh38_GRC_exclusions.bed'
+    official_exclusions_bed = params.exclusions_bed == ncbi_base + 'GCA_000001405.15_GRCh38_GRC_exclusions.bed'
     policy = encoded([
         fasta: [md5: official_fasta ? 'a08035b6a6e31780e96a34008ff21bd6' : null, sha256: params.fasta_sha256],
-        bed: [md5: official_bed ? 'bf5c011e0342f355422144eb3547b5d0' : null, sha256: params.bed_sha256],
-        alt_omission: official_fasta && official_bed ? 'checksum-verified NCBI no-ALT source pair' :
-            (allow_alt == 'true' ? 'operator-declared NCBI no-ALT omission for custom inputs' : null)
+        exclusions_bed: [md5: official_exclusions_bed ? 'bf5c011e0342f355422144eb3547b5d0' : null, sha256: params.exclusions_bed_sha256]
     ])
     fasta = channel.of(referenceInput(params.fasta))
-    bed = channel.of(referenceInput(params.bed))
+    exclusions_bed = channel.of(referenceInput(params.exclusions_bed))
     inputs = fasta.branch { path ->
         compressed: path.name.endsWith('.gz')
         plain: true
     }
     GUNZIP(inputs.compressed.map { path -> [[id: 'reference'], path] })
     uncompressed = GUNZIP.out.gunzip.map { _meta, path -> path }.mix(inputs.plain)
-    REFERENCE_VALIDATE(uncompressed, bed, fasta, policy, file("$repository/bin/validate_reference.py"))
-    BEDTOOLS_MASKFASTA(REFERENCE_VALIDATE.out.bed.map { path -> [[id: 'reference'], path] }, REFERENCE_VALIDATE.out.fasta)
+    REFERENCE_VALIDATE(uncompressed, exclusions_bed, fasta, policy, file("$repository/bin/validate_reference.py"))
+    BEDTOOLS_MASKFASTA(REFERENCE_VALIDATE.out.exclusions_bed.map { path -> [[id: 'reference'], path] }, REFERENCE_VALIDATE.out.fasta)
     BWAMEM2_INDEX(BEDTOOLS_MASKFASTA.out.fasta)
     modules = new groovy.json.JsonSlurper().parseText(file("$repository/modules.json").text)
     source_paths = [
@@ -57,7 +52,7 @@ workflow {
             [repository.relativize(path).toString(), java.security.MessageDigest.getInstance('SHA-256').digest(path.bytes).encodeHex().toString()]
         }
     metadata = encoded([
-        sources: [fasta: [uri: params.fasta.toString()], bed: [uri: params.bed.toString()]],
+        sources: [fasta: [uri: params.fasta.toString()], exclusions_bed: [uri: params.exclusions_bed.toString()]],
         workflow: [repository: workflow.manifest.name, version: workflow.manifest.version,
                    nextflow: nextflow.version.toString(), commit: workflow.commitId, source_sha256: source_hashes],
         modules: modules.repos['https://github.com/nf-core/modules.git'].modules['nf-core']
