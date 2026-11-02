@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import unittest
@@ -15,6 +16,18 @@ ALIGNMENT_PROCESSES = {"CUTADAPT", "BWAMEM2_MEM", "SAMTOOLS_MERGE",
 
 
 class PipelineConfigurationTests(unittest.TestCase):
+    def test_local_container_pins_are_apptainer_compatible(self):
+        for module in sorted((PROJECT / "modules/local").glob("*.nf")):
+            with self.subTest(module=module.name):
+                containers = re.findall(r"^\s*container\s+'([^']+)'", module.read_text(), re.MULTILINE)
+                self.assertTrue(containers, f"Missing container declaration in {module}")
+                for container in containers:
+                    image, separator, digest = container.partition("@sha256:")
+                    self.assertEqual(separator, "@sha256:", "Keep custom runtimes digest-pinned")
+                    self.assertRegex(digest, r"^[0-9a-f]{64}$")
+                    self.assertNotIn(":", image.rsplit("/", 1)[-1],
+                                     "Apptainer does not support Docker references with both a tag and digest")
+
     def test_profiles_and_site_overrides_remain_pipeline_specific(self):
         with tempfile.TemporaryDirectory() as directory:
             for pipeline, foreign in [("reference", ALIGNMENT_PROCESSES),
