@@ -27,10 +27,9 @@ for path in Path(index).iterdir():
     shutil.copyfile(path, bundle / "bwamem2" / path.name)
 report = json.loads(Path(validation).read_text())
 metadata.update({
-    "format_version": 1,
     "fasta": "reference.fa",
     "bwamem2_index": "bwamem2/reference.fa",
-    "omitted_bed_entries": report["omitted_bed_entries"],
+    "omitted_exclusions_bed_entries": report["omitted_exclusions_bed_entries"],
     "contigs": report["contigs"],
     "tools": [{"process": p, "tool": t, "version": v} for p, t, v in tools],
     "metadata_python": sys.version.split()[0],
@@ -39,4 +38,5 @@ metadata.update({
 })
 for key, checksums in report["sources"].items():
     metadata["sources"][key].update(checksums)
-(bundle / "bundle.json").write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n")
+manifest = {"bundle_format_version": 1, **metadata}
+(bundle / "bundle.json").write_text(json.dumps(manifest, indent=2) + "\n")

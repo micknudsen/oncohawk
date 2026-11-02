@@ -17,14 +17,13 @@ Required CI checks every installed module file against its pinned upstream Git o
 | Parameter | Meaning |
 | --- | --- |
 | `--fasta` | Local `.fa`/`.fa.gz` or a downloadable FASTA URL. Defaults to the selected NCBI no-ALT analysis set below. |
-| `--bed` | Local exclusion BED or downloadable BED URL. Defaults to the matching NCBI exclusions below. |
+| `--exclusions_bed` | Local exclusions BED or downloadable BED URL. Defaults to the matching NCBI exclusions below. |
 | `--outdir` | New directory for the completed bundle; default `reference`. Choose a fresh destination for each bundle. |
-| `--fasta_sha256`, `--bed_sha256` | Optional expected SHA256 values for custom source files, checked before preparation. For `.gz` input, hash the compressed source bytes. |
-| `--allow_ncbi_alt_omission true` | Explicitly declare that local/custom inputs permit the one known no-ALT exclusion described below. |
+| `--fasta_sha256`, `--exclusions_bed_sha256` | Optional expected SHA256 values for custom source files, checked before preparation. For `.gz` input, hash the compressed source bytes. |
 
 The production defaults are the [GRCh38 no-ALT analysis-set FASTA with UCSC IDs](https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.gz) and [GRC exclusions BED](https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/GCA_000001405.15_GRCh38_GRC_exclusions.bed). Their [NCBI checksum metadata](https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/md5checksums.txt), verified on 2026-11-01, gives FASTA MD5 `a08035b6a6e31780e96a34008ff21bd6` and BED MD5 `bf5c011e0342f355422144eb3547b5d0`. Default acquisition verifies these values.
 
-BED coordinates are zero-based, half-open. Masking preserves sequence names, lengths, coordinates, and unmasked bases. Invalid intervals and unexpected contig names fail clearly. The exact BED interval `chr10_KI270825v1_alt:0-188315` refers to an ALT sequence intentionally absent from this no-ALT FASTA. Its omission is automatic only for the checksum-verified default URL pair. For local copies or fixtures, `--allow_ncbi_alt_omission true` records an operator declaration, not verification of official NCBI identity. Every omitted entry and its reason are retained in the manifest; other missing contigs remain errors.
+Exclusions BED coordinates are zero-based, half-open. Masking preserves sequence names, lengths, coordinates, and unmasked bases. If a contig in the exclusions BED is absent from the FASTA, its intervals are skipped and each is recorded in `omitted_exclusions_bed_entries` with its line number, contig, coordinates, and reason `"Contig missing in FASTA"`. This applies to all inputs, including the default NCBI files. Malformed intervals and coordinates outside an existing contig still cause an error.
 
 Input filenames may contain letters, digits, dots, underscores, and hyphens; parent directory paths may contain spaces. Each input identifies one file, not a wildcard collection. Existing output directories are rejected to prevent mixed or overwritten bundles. Source checksums are verified after decompression and before masking/indexing.
 
@@ -44,7 +43,7 @@ with gzip.open(example / 'small.fa.gz', 'wt') as handle:
 PY
 nextflow run pipelines/reference -profile docker,test \
   --fasta .local/reference-example/small.fa.gz \
-  --bed .local/reference-example/exclusions.bed \
+  --exclusions_bed .local/reference-example/exclusions.bed \
   --outdir .local/reference-example/bundle
 ```
 
@@ -67,7 +66,7 @@ nextflow run pipelines/reference -profile slurm -c .local/site.config,.local/ref
   --outdir /shared/PROJECT/oncohawk/bundles/grch38-no-alt
 ```
 
-Omitting `--fasta` and `--bed` selects the checksum-verified NCBI sources. To use local copies, provide both paths and the explicit omission declaration when appropriate. The `slurm` profile enables Apptainer automatic mounts and uses the same workflow and modules as Docker. See Nextflow's [executor guidance](https://docs.seqera.io/nextflow/executor) and [container guidance](https://docs.seqera.io/nextflow/container).
+Omitting `--fasta` and `--exclusions_bed` selects the checksum-verified NCBI sources. To use local copies, provide both paths. The `slurm` profile enables Apptainer automatic mounts and uses the same workflow and modules as Docker. See Nextflow's [executor guidance](https://docs.seqera.io/nextflow/executor) and [container guidance](https://docs.seqera.io/nextflow/container).
 
 HPC execution is checked informally by the operator. HPC access, runs, evidence, and sign-off never gate formal acceptance or completion. No cluster run is claimed here.
 
@@ -85,4 +84,4 @@ reference/
 └── bundle.json
 ```
 
-`bundle.json` has `format_version: 1`, relative `fasta` and `bwamem2_index` paths, SHA256 artifact checksums, source URIs and checksums, sequence lengths, omitted BED entries, tool/module versions, and workflow identity/source hashes. Source hashes use repository-relative paths and cover reference-preparation sources and shared files used by preparation, excluding alignment-only sources. The repository commit is recorded separately. The index path is a prefix; all five index files accompany it. Keep the manifest and artifacts together when moving a bundle. A process failure is a failed preparation, not a completed bundle; inspect the Nextflow task log before retrying into a new output destination.
+`bundle.json` starts with `bundle_format_version: 1`, identifying the format of the entire reference bundle, followed by relative `fasta` and `bwamem2_index` paths, SHA256 artifact checksums, source URIs and checksums under `sources.fasta` and `sources.exclusions_bed`, sequence lengths, omitted BED entries, tool/module versions, and workflow identity/source hashes. Source hashes use repository-relative paths and cover reference-preparation sources and shared files used by preparation, excluding alignment-only sources. The repository commit is recorded separately. The index path is a prefix; all five index files accompany it. Keep the manifest and artifacts together when moving a bundle. A process failure is a failed preparation, not a completed bundle; inspect the Nextflow task log before retrying into a new output destination.

@@ -23,7 +23,7 @@ Prepare a bundle from your own small fixture:
 ```bash
 nextflow run pipelines/reference -profile docker,test \
   --fasta /path/to/small.fa.gz \
-  --bed /path/to/exclusions.bed \
+  --exclusions_bed /path/to/exclusions.bed \
   --outdir /path/to/new-bundle
 ```
 

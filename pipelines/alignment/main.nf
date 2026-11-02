@@ -42,10 +42,10 @@ def alignmentReference(value) {
     if (!manifest.isFile())
         error('Reference bundle must contain bundle.json')
     def bundle = new groovy.json.JsonSlurper().parseText(manifest.text)
-    if (!(bundle instanceof Map) || bundle.format_version != 1)
-        error('Unsupported reference-bundle format_version; expected 1')
+    if (!(bundle instanceof Map) || bundle.bundle_format_version != 1)
+        error('Unsupported reference-bundle bundle_format_version; expected 1')
     if (bundle.fasta != 'reference.fa' || bundle.bwamem2_index != 'bwamem2/reference.fa')
-        error('Reference-bundle artifact paths do not match format_version 1')
+        error('Reference-bundle artifact paths do not match bundle_format_version 1')
     def artifacts = ['reference.fa'] + ['.0123', '.amb', '.ann', '.bwt.2bit.64', '.pac']
         .collect { suffix -> "bwamem2/reference.fa${suffix}".toString() }
     if (!(bundle.checksums instanceof Map) || bundle.checksums.keySet() != artifacts.toSet())

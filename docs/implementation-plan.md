@@ -32,7 +32,7 @@ Use protected `master`, required GitHub Actions checks, squash-only merging, and
 
 Develop reference preparation locally against the small synthetic fixture. Support acquiring the exact NCBI FASTA and BED from Q2 and running decompression, exclusion masking, and bwa-mem2 indexing with the production SLURM/Apptainer profile. Use suitable upstream modules, including [gunzip](https://nf-co.re/modules/gunzip), `bedtools/maskfasta`, and `bwamem2/index`; acquisition and compatibility handling are routine implementation work. The user runs the full-reference path on the HPC; its execution is not an acceptance gate.
 
-Validate the supplied BED against its FASTA during reference preparation. Distinguish intentionally absent ALT sequences from unexpected name/coordinate mismatches, recording any excluded BED entries. Publish the masked FASTA, alignment indexes, and a small provenance file with relative artifact paths, source URLs/checksums, and tool/module versions. Test this behavior with compact fixtures, without requiring a full-reference HPC run. Add further reference assets only when a milestone step needs them.
+Validate the exclusions BED against its FASTA during reference preparation. Skip every entry whose contig is absent from the FASTA and record it in `omitted_exclusions_bed_entries` with reason "Contig missing in FASTA". Reject malformed intervals and out-of-bounds coordinates on existing contigs. Publish the masked FASTA, alignment indexes, and a small provenance file with relative artifact paths, source URLs/checksums, and tool/module versions. Test this behavior with compact fixtures, without requiring a full-reference HPC run. Add further reference assets only when a milestone step needs them.
 
 ### 3. Connect the sequencing-to-BAM path
 

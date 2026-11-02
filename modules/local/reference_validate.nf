@@ -4,13 +4,13 @@ process REFERENCE_VALIDATE {
 
     input:
     path fasta, stageAs: 'unmasked.fa'
-    path bed, stageAs: 'exclusions.bed'
+    path exclusions_bed, stageAs: 'exclusions.bed'
     path archive, stageAs: 'unmasked_source'
     val policy
     path validator
 
     output:
-    path 'validated.bed', emit: bed
+    path 'validated_exclusions.bed', emit: exclusions_bed
     path 'validation.json', emit: report
     path fasta, emit: fasta
 

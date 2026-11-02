@@ -31,7 +31,7 @@ Use these exact NCBI resources, selected in [Q2](design.md#q2--reference-for-mil
 - [GRCh38 no-ALT analysis-set FASTA, UCSC sequence IDs](https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.gz).
 - [Matching GRC exclusions BED](https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/GCA_000001405.15_GRCh38_GRC_exclusions.bed).
 
-Hard-mask the exclusion intervals with `N` bases before generating alignment indexes. The bundle's alignment FASTA and bwa-mem2 indexes must represent the same masked sequence. Preserve sequence names, lengths, and coordinates. The GENCODE FASTA proposal was not adopted.
+Hard-mask the exclusion intervals with `N` bases before generating alignment indexes. The bundle's alignment FASTA and bwa-mem2 indexes must represent the same masked sequence. Preserve sequence names, lengths, and coordinates. Skip exclusions BED entries whose contig is absent from the FASTA and record every skipped entry in `omitted_exclusions_bed_entries` with reason `"Contig missing in FASTA"`. Malformed intervals and out-of-bounds coordinates on existing contigs remain errors. The GENCODE FASTA proposal was not adopted.
 
 ### Sequencing inputs
 

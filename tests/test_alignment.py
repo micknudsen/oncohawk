@@ -43,7 +43,7 @@ class AlignmentTests(unittest.TestCase):
         cls.bundle = cls.reference_directory / "bundle"
         result = subprocess.run([
             os.environ.get("NEXTFLOW", "nextflow"), "run", str(PROJECT / "pipelines/reference"),
-            "-profile", "docker,test", "--fasta", str(fasta), "--bed", str(bed),
+            "-profile", "docker,test", "--fasta", str(fasta), "--exclusions_bed", str(bed),
             "--outdir", str(cls.bundle),
         ], cwd=cls.reference_directory, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         (cls.reference_directory / "preparation.log").write_text(result.stdout)
@@ -589,13 +589,13 @@ class AlignmentTests(unittest.TestCase):
         self.bundle = Path(shutil.copytree(self.bundle, self.directory / "bundle"))
         manifest_path = self.bundle / "bundle.json"
         manifest = json.loads(manifest_path.read_text())
-        manifest["format_version"] = 99
+        manifest["bundle_format_version"] = 99
         manifest_path.write_text(json.dumps(manifest))
         result = self.align()
         self.assertNotEqual(result.returncode, 0, result.stdout)
-        self.assertIn("Unsupported reference-bundle format_version", result.stdout)
+        self.assertIn("Unsupported reference-bundle bundle_format_version", result.stdout)
         self.assertFalse((self.output / "S1.bam").exists())
-        manifest["format_version"] = 1
+        manifest["bundle_format_version"] = 1
         manifest_path.write_text(json.dumps(manifest))
         with (self.bundle / "reference.fa").open("a") as handle:
             handle.write("A\n")
