@@ -8,7 +8,7 @@ Use Java **21.0.13+9** and [Nextflow **26.10.4**](https://github.com/nextflow-io
 
 The modules were installed with nf-core CLI **4.2.1** at upstream revision `20c6e6407f63748003b47f92837b64fb0a53ffa4`, recorded in [modules.json](../modules.json). `gunzip`, `bedtools/maskfasta`, and `bwamem2/index` remain unchanged, including their upstream container pins. Actual Docker execution reported gzip **1.13**, bedtools **2.31.1**, and bwa-mem2 **2.2.1**. The upstream bwa-mem2 Conda environment declares 2.3, but that environment is not executed: Conda is unsupported. The manifest records executed versions rather than inferring them from unused environment metadata.
 
-The custom validation and packaging steps implement Oncohawk's input and bundle contracts; their runtime is Python **3.12.16** (Bookworm), pinned as `python@sha256:a5bab0ff300f91231c2e68bf73a8a8d60762ac39ce1c50eaf6803e4c38a9062b`. The digest-only reference works with Docker and Apptainer; combining a tag and digest is rejected by Apptainer. Bioinformatics operations remain in the pristine upstream modules. Executed tool versions and workflow source hashes are recorded in each bundle.
+The custom download, validation, and packaging steps implement Oncohawk's input and bundle contracts; their runtime is Python **3.12.16** (Bookworm), pinned as `python@sha256:a5bab0ff300f91231c2e68bf73a8a8d60762ac39ce1c50eaf6803e4c38a9062b`. The digest-only reference works with Docker and Apptainer; combining a tag and digest is rejected by Apptainer. Bioinformatics operations remain in the pristine upstream modules. Executed tool versions and workflow source hashes are recorded in each bundle.
 
 Required CI checks every installed module file against its pinned upstream Git object, including missing or added files. Upstream snapshots contain trailing whitespace, so `.gitattributes` exempts only `modules/nf-core/` from whitespace formatting checks; the stricter upstream integrity check protects those bytes. Project code and documentation retain whitespace checks.
 
@@ -19,13 +19,43 @@ Required CI checks every installed module file against its pinned upstream Git o
 | `--fasta` | Local `.fa`/`.fa.gz` or a downloadable FASTA URL. Defaults to the selected NCBI no-ALT analysis set below. |
 | `--exclusions_bed` | Local exclusions BED or downloadable BED URL. Defaults to the matching NCBI exclusions below. |
 | `--outdir` | New directory for the completed bundle; default `reference`. Choose a fresh destination for each bundle. |
+| `--downloads_dir` | Persistent source-download store on a local/shared filesystem; default `downloads` relative to the launch directory. Independent of `-work-dir` and `--outdir`. |
 | `--fasta_sha256`, `--exclusions_bed_sha256` | Optional expected SHA256 values for custom source files, checked before preparation. For `.gz` input, hash the compressed source bytes. |
+| `--fasta_identity`, `--exclusions_bed_identity` | Optional JSON objects with `dataset`, `release`, and/or `assembly` strings for custom sources; retained in store and bundle provenance. Also accept maps in a Nextflow params file. Official identity cannot be overridden. |
+
+For example, attach custom source identity with `--fasta_identity '{"dataset":"lab-reference","release":"v2","assembly":"GRCh38"}'`. Omitted fields remain unspecified; changing any supplied identity field selects a distinct store entry.
 
 The production defaults are the [GRCh38 no-ALT analysis-set FASTA with UCSC IDs](https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.gz) and [GRC exclusions BED](https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/GCA_000001405.15_GRCh38_GRC_exclusions.bed). Their [NCBI checksum metadata](https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/md5checksums.txt), verified on 2026-11-01, gives FASTA MD5 `a08035b6a6e31780e96a34008ff21bd6` and BED MD5 `bf5c011e0342f355422144eb3547b5d0`. Default acquisition verifies these values.
 
 Exclusions BED coordinates are zero-based, half-open. Masking preserves sequence names, lengths, coordinates, and unmasked bases. If a contig in the exclusions BED is absent from the FASTA, its intervals are skipped and each is recorded in `omitted_exclusions_bed_entries` with its line number, contig, coordinates, and reason `"Contig missing in FASTA"`. This applies to all inputs, including the default NCBI files. Malformed intervals and coordinates outside an existing contig still cause an error.
 
-Input filenames may contain letters, digits, dots, underscores, and hyphens; parent directory paths may contain spaces. Each input identifies one file, not a wildcard collection. Existing output directories are rejected to prevent mixed or overwritten bundles. Source checksums are verified after decompression and before masking/indexing.
+Input filenames may contain letters, digits, dots, underscores, and hyphens; parent directory paths may contain spaces. Each input identifies one file, not a wildcard collection. Existing output directories are rejected to prevent mixed or overwritten bundles. Remote source checksums are checked before decompression; validation also checks original source bytes before masking/indexing.
+
+## Persistent downloads
+
+Both the default NCBI sources and custom HTTP, HTTPS, or FTP URLs go through the observable `REFERENCE_DOWNLOAD` task. URLs are passed as values, so Nextflow does not stage them remotely first. Local files bypass this store entirely and are neither copied into it nor modified. The launcher resolves `--downloads_dir` to an absolute filesystem path; use an absolute path when sharing a store across launch directories:
+
+```bash
+nextflow run pipelines/reference -profile docker \
+  --downloads_dir /path/to/persistent/downloads \
+  --outdir /path/to/new-bundle
+```
+
+Nextflow task caching (`-resume`) reuses successful task executions in a work directory. The download store instead retains original source bytes independently of those tasks and completed bundles. Fresh runs, deletion of task caches/work directories, and edits to validation, masking, indexing, or packaging do not require another download of a valid stored asset. Acquisition checks run even with `-resume`, so task caching cannot bypass store integrity checks. Prepared derivatives and indexes are rebuilt according to ordinary task-caching rules. There is no `storeDir` directive; [Nextflow recommends explicit workflow reuse logic](https://docs.seqera.io/nextflow/reference/process/directives/store-dir).
+
+Each store key hashes the original URI, source kind, expected checksums, and dataset/release/assembly identity. Different URLs or expected checksums therefore remain distinct even when their basenames match. Official inputs record the NCBI dataset, `GCA_000001405.15` release, and GRCh38 assembly and always enforce the pinned MD5 values above, plus a SHA256 if supplied. SHA256 and MD5 are recorded over the **original downloaded bytes**, including compression. The bundle keeps the original URI and source checksums rather than identifying the store path as the source.
+
+A custom source without an expected checksum records a computed SHA256 on first acquisition. Subsequent hits hash all stored bytes and compare integrity metadata before reuse. This detects subsequent corruption; it does **not** establish publisher authenticity or detect upstream changes at an unchanged URL. Supply an expected SHA256 whenever available. To intentionally acquire changed unpinned content at the same URL, remove its store entry while no runs use it, or select a new store.
+
+Transfers use temporary files and become complete only when metadata is atomically committed to reference a complete immutable generation. A checksum mismatch never replaces a valid entry. Missing, incomplete, or corrupt entries are reported and reacquired; a failed replacement leaves existing generations intact and fails preparation. Network errors and truncated transfers have at most three attempts with a 60-second socket timeout and short backoff; checksum mismatches fail immediately. Task time limits bound overall runtime.
+
+Concurrent requests for one key acquire ownership by atomically creating its `.lock/` directory while checking or acquiring it. Other keys can proceed independently. The filesystem must support atomic directory creation and renames visible across clients. Normal exits, failures, and SIGTERM release ownership. A hard kill or node crash may leave `.lock/owner.json`, which records the container hostname, PID, and start time. A waiting task fails with the lock path after one hour; ownership is never stolen based on age because a legitimate large transfer may take hours. For stale ownership, stop all runs accessing that entry, check the recorded owner against active container/SLURM jobs (PIDs are container-local), then remove only that entry's `.lock/` directory and rerun. If ownership cannot be established, ask the cluster operator before removing it. Orphan partial files are never treated as complete.
+
+To inspect entries, read `<downloads_dir>/<key>/metadata.json`: it records the asset identity, generation, byte size, and checksums. Its `generation` names the subdirectory containing the source's original basename. No metadata means no completed entry. With all readers and writers stopped, remove an entire `<key>/` directory to force reacquisition. Remove the whole store to reclaim everything. Interrupted transfers may leave `.partial-*` directories; superseded generations and unreferenced files may also remain. They are ignored and may be removed while the store is idle. There is no automatic eviction or derivative caching, and no gnomAD acquisition in this workflow.
+
+Store hits require sequential reads of the entire source, so multi-gigabyte inputs still incur hashing and filesystem I/O. Reference validation hashes sources again; avoiding network downloads does not eliminate decompression, validation, masking, indexing, or bundle publication costs.
+
+The launcher must be able to create/read the store and read task results. Download tasks require outbound source access on the machine executing them: the Docker host/container locally, or SLURM compute nodes in production. On a hit no source network request is made. Container-image acquisition may separately require network access. Docker explicitly mounts the store read/write and runs acquisition with the task host's UID/GID, so the launcher can read the completed source directories on Linux as well as macOS. Docker Desktop must permit sharing that host path. Apptainer explicitly binds the store at the same absolute path. Submission host and compute nodes must see it and the work/output paths consistently, with suitable directory permissions for all participating users. Colons, commas, and newlines in the store path are rejected because they conflict with container bind syntax.
 
 ## Local Docker example
 
@@ -53,9 +83,11 @@ On 2026-11-01, an initial real masking/indexing/provenance test passed under Doc
 
 A subsequent trace of the 36-base fixture on the same date measured 19.8 MB peak RSS for indexing (1.1 GB peak virtual memory) and at most 35.6 MB peak RSS across these five tasks. The test harness retains per-run logs and traces under `.local/tests/`. These fixture measurements do not estimate human-reference requirements.
 
+On 2026-11-05, the persistent-download enhancement passed all **44** tests in `python3 -m unittest discover -s tests -v` (843 seconds), including controlled HTTP request counts for fresh-run reuse, downstream edits, concurrent acquisition, changed identities/checksums, interrupted transfers, and corrupt/incomplete entries. Nextflow lint and Python compilation passed, and all 55 installed nf-core files matched their pinned upstream revisions. This local run used Nextflow 26.10.4, Docker 29.9.2, the installed Java 25.0.5.0.3 launcher runtime, and Python 3.9.6 for the test harness; tasks used the pinned containers above. CI retains Java 21/Python 3.12 and was not run for this local commit. Native Linux host permissions and SLURM/Apptainer execution were not exercised here; no production reference was downloaded.
+
 ## Production with SLURM and Apptainer
 
-Copy [conf/site.example.config](../conf/site.example.config) to a local site configuration, then replace its partition, optional account, and shared paths. The submission host and compute nodes must see the work directory, input files, output destination, and Apptainer cache. The shared site file contains no process-name selectors. The `slurm` profile automatically loads [reference process allocations](../pipelines/reference/resources.config). These are starting allocations, not measured cluster requirements. To customize them, copy that resource file and pass it as a second configuration file; keep it specific to reference preparation.
+Copy [conf/site.example.config](../conf/site.example.config) to a local site configuration, then replace its partition, optional account, and shared paths. The submission host and compute nodes must see the work directory, download store, input files, output destination, and Apptainer cache. The shared site file contains no process-name selectors. The `slurm` profile automatically loads [reference process allocations](../pipelines/reference/resources.config). These are starting allocations, not measured cluster requirements. To customize them, copy that resource file and pass it as a second configuration file; keep it specific to reference preparation.
 
 ```bash
 mkdir -p .local
@@ -63,6 +95,7 @@ cp conf/site.example.config .local/site.config
 cp pipelines/reference/resources.config .local/reference-resources.config
 # Edit the shared site settings and reference resource allocations for your cluster.
 nextflow run pipelines/reference -profile slurm -c .local/site.config,.local/reference-resources.config \
+  --downloads_dir /shared/PROJECT/oncohawk/downloads \
   --outdir /shared/PROJECT/oncohawk/bundles/grch38-no-alt
 ```
 
