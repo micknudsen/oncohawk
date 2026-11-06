@@ -13,6 +13,7 @@ import re
 import shutil
 import signal
 import socket
+import ssl
 import sys
 import tempfile
 import time
@@ -36,10 +37,13 @@ def check_expected(actual, asset):
             raise ValueError(f"{asset['kind']} checksum mismatch ({algorithm}) for {asset['uri']}")
 
 
-def download(uri, source):
+def download(uri, source, ca_bundle=None):
+    context = ssl.create_default_context()
+    if ca_bundle:
+        context.load_verify_locations(cafile=ca_bundle)
     for attempt in range(1, 4):
         try:
-            with urllib.request.urlopen(uri, timeout=60) as response, source.open("wb") as target:
+            with urllib.request.urlopen(uri, timeout=60, context=context) as response, source.open("wb") as target:
                 shutil.copyfileobj(response, target, length=1024 * 1024)
                 length = response.headers.get("Content-Length")
                 if length is not None and target.tell() != int(length):
@@ -48,6 +52,10 @@ def download(uri, source):
                 os.fsync(target.fileno())
             return
         except (OSError, http.client.HTTPException) as error:
+            if isinstance(getattr(error, "reason", error), ssl.SSLCertVerificationError):
+                raise OSError(f"TLS certificate verification failed for {uri}: {error}. "
+                              "For a private/proxy CA, set --download_ca_bundle to the approved PEM bundle. "
+                              "If already configured, check the certificate chain and hostname with your administrator.") from error
             if attempt == 3:
                 raise OSError(f"Download failed after 3 attempts for {uri}: {error}. "
                               "Check source availability and compute-node network access, then rerun.") from error
@@ -79,7 +87,7 @@ def entry_lock(entry):
         shutil.rmtree(lock)
 
 
-def acquire(store, asset):
+def acquire(store, asset, ca_bundle=None):
     asset["expected"] = {name: value.lower() for name, value in asset["expected"].items() if value}
     for name, value in asset["expected"].items():
         if name not in ("sha256", "md5") or not re.fullmatch(
@@ -92,10 +100,10 @@ def acquire(store, asset):
     entry = store / key
     entry.mkdir(parents=True, exist_ok=True)
     with entry_lock(entry):
-        return acquire_locked(entry, asset, filename)
+        return acquire_locked(entry, asset, filename, ca_bundle)
 
 
-def acquire_locked(entry, asset, filename):
+def acquire_locked(entry, asset, filename, ca_bundle=None):
     metadata = entry / "metadata.json"
     if metadata.exists():
         try:
@@ -121,7 +129,7 @@ def acquire_locked(entry, asset, filename):
     try:
         source = temporary / filename
         print(f"Downloading {asset['uri']}", file=sys.stderr)
-        download(asset["uri"], source)
+        download(asset["uri"], source, ca_bundle)
         actual = hashes(source)
         check_expected(actual, asset)
         generation = uuid.uuid4().hex
@@ -147,9 +155,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("store", type=Path)
     parser.add_argument("asset", help="Base64-encoded JSON asset identity and integrity policy")
+    parser.add_argument("--ca-bundle", type=Path, help="Additional trusted CA certificates in PEM format")
     args = parser.parse_args()
     try:
-        source = acquire(args.store, json.loads(base64.b64decode(args.asset)))
+        source = acquire(args.store, json.loads(base64.b64decode(args.asset)), args.ca_bundle)
         Path("download.json").write_text(json.dumps({"path": str(source)}) + "\n")
     except (ValueError, OSError) as error:
         parser.exit(1, f"Reference download error: {error}\n")

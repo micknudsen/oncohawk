@@ -13,6 +13,7 @@ process REFERENCE_DOWNLOAD {
     tuple val(kind), val(asset)
     val downloads_dir
     path downloader
+    path ca_bundle, stageAs: 'download-ca.pem'
     env 'http_proxy'
     env 'https_proxy'
 
@@ -21,7 +22,8 @@ process REFERENCE_DOWNLOAD {
 
     script:
     def store = downloads_dir.replace("'", "'\"'\"'")
+    def ca_option = ca_bundle ? "--ca-bundle '${ca_bundle}'" : ''
     """
-    python3 '${downloader}' '${store}' '${asset}'
+    python3 '${downloader}' '${store}' '${asset}' ${ca_option}
     """
 }

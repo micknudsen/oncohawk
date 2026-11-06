@@ -54,13 +54,17 @@ workflow {
     downloads = file(params.downloads_dir).toAbsolutePath().normalize()
     if (downloads.toUri().scheme != 'file' || downloads.toString() =~ /[:\r\n,]/)
         error('--downloads_dir must be a local/shared filesystem directory without colons, commas or newlines')
+    ca_bundle = params.download_ca_bundle ? file(params.download_ca_bundle, checkIfExists: true) : []
+    if (params.download_ca_bundle && (ca_bundle instanceof List ||
+            ca_bundle.toUri().scheme != 'file' || !ca_bundle.isFile()))
+        error('--download_ca_bundle must identify one local/shared PEM file')
     if (remote)
         downloads.mkdirs()
     assets = remote.collect { kind, uri ->
         [kind, encoded([kind: kind, uri: uri, expected: checksums[kind], identity: identities[kind]])]
     }
     REFERENCE_DOWNLOAD(
-        channel.fromList(assets), downloads.toString(), file("$repository/bin/download_reference.py"),
+        channel.fromList(assets), downloads.toString(), file("$repository/bin/download_reference.py"), ca_bundle,
         System.getenv('http_proxy') ?: '', System.getenv('https_proxy') ?: ''
     )
     acquired = REFERENCE_DOWNLOAD.out.source.map { kind, result ->
