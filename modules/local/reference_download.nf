@@ -14,8 +14,7 @@ process REFERENCE_DOWNLOAD {
     val downloads_dir
     path downloader
     path ca_bundle, stageAs: 'download-ca.pem'
-    env 'http_proxy'
-    env 'https_proxy'
+    tuple env('http_proxy'), env('HTTP_PROXY'), env('https_proxy'), env('HTTPS_PROXY'), env('no_proxy'), env('NO_PROXY')
 
     output:
     tuple val(kind), path('download.json'), emit: source

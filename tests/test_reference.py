@@ -214,33 +214,87 @@ class ReferencePreparationTests(unittest.TestCase):
         self.assertEqual(manifest["sources"]["fasta"]["sha256"], expected)
         self.assertEqual(manifest["sources"]["fasta"]["verified_checksum"], f"sha256:{expected}")
 
-    def test_download_jobs_receive_http_proxy(self):
+    def check_http_proxy(self, variables):
         expected = hashlib.sha256(self.fasta.read_bytes()).hexdigest()
         with self.http_sources() as (proxy, requests, _payloads):
             self.fasta = "http://reference.invalid/source.fa.gz"
             self.bed = "http://reference.invalid/exclusions.bed"
             environment = {key: value for key, value in os.environ.items()
                            if not key.lower().endswith("_proxy")}
-            environment.update(http_proxy=proxy, https_proxy="http://127.0.0.1:1",
-                               NXF_OFFLINE="true")
+            environment.pop("REQUEST_METHOD", None)
+            environment.update({name: proxy if value == "fixture" else value
+                                for name, value in variables.items()})
+            environment["NXF_OFFLINE"] = "true"
             result = self.prepare("--fasta_sha256", expected, environment=environment)
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertEqual(requests, {self.fasta: 1, self.bed: 1})
         manifest = json.loads((self.bundle / "bundle.json").read_text())
         self.assertEqual(manifest["sources"]["fasta"]["sha256"], expected)
 
-    def test_download_jobs_receive_https_proxy(self):
+    def test_download_jobs_receive_http_proxy(self):
+        self.check_http_proxy({"http_proxy": "fixture"})
+
+    def test_download_jobs_receive_uppercase_http_proxy(self):
+        self.check_http_proxy({"HTTP_PROXY": "fixture"})
+
+    def test_download_jobs_prefer_lowercase_http_proxy(self):
+        self.check_http_proxy({"HTTP_PROXY": "http://127.0.0.1:1", "http_proxy": "fixture"})
+
+    def check_https_proxy(self, variables):
         with self.http_sources() as (proxy, requests, _payloads):
             self.fasta = "https://reference.invalid/source.fa.gz"
             environment = {key: value for key, value in os.environ.items()
                            if not key.lower().endswith("_proxy")}
-            environment.update(http_proxy="http://127.0.0.1:1", https_proxy=proxy,
-                               NXF_OFFLINE="true")
+            environment.pop("REQUEST_METHOD", None)
+            environment.update({name: proxy if value == "fixture" else value
+                                for name, value in variables.items()})
+            environment["NXF_OFFLINE"] = "true"
             result = self.prepare(environment=environment)
         self.assertNotEqual(result.returncode, 0, result.stdout)
         self.assertEqual(requests, {"reference.invalid:443": 3})
         self.assertIn("502 Fixture tunnel rejected", result.stdout)
         self.assertFalse((self.bundle / "bundle.json").exists())
+
+    def test_download_jobs_receive_https_proxy(self):
+        self.check_https_proxy({"https_proxy": "fixture"})
+
+    def test_download_jobs_receive_uppercase_https_proxy(self):
+        self.check_https_proxy({"HTTPS_PROXY": "fixture"})
+
+    def test_download_jobs_prefer_lowercase_https_proxy(self):
+        self.check_https_proxy({"HTTPS_PROXY": "http://127.0.0.1:1", "https_proxy": "fixture"})
+
+    def check_direct_download(self, variables, https=False):
+        context, ca_bundle = self.private_ca_server() if https else (None, None)
+        with self.http_sources(tls_context=context) as (base, requests, _payloads):
+            self.fasta = f"{base}/source.fa.gz"
+            environment = {key: value for key, value in os.environ.items()
+                           if not key.lower().endswith("_proxy")}
+            environment.pop("REQUEST_METHOD", None)
+            environment.update(variables, NXF_OFFLINE="true")
+            arguments = ["--download_ca_bundle", str(ca_bundle)] if ca_bundle else []
+            result = self.prepare(*arguments, environment=environment)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(requests, {"/source.fa.gz": 1})
+
+    def test_download_jobs_preserve_empty_lowercase_http_proxy(self):
+        self.check_direct_download({"HTTP_PROXY": "http://127.0.0.1:1", "http_proxy": ""})
+
+    def test_download_jobs_preserve_empty_lowercase_https_proxy(self):
+        self.check_direct_download({"HTTPS_PROXY": "http://127.0.0.1:1", "https_proxy": ""}, https=True)
+
+    def test_download_jobs_receive_uppercase_no_proxy(self):
+        self.check_direct_download({"http_proxy": "http://127.0.0.1:1", "NO_PROXY": "host.docker.internal"})
+
+    def test_download_jobs_prefer_lowercase_no_proxy(self):
+        self.check_direct_download({"http_proxy": "http://127.0.0.1:1",
+                                    "NO_PROXY": "wrong.invalid", "no_proxy": "host.docker.internal"})
+
+    def test_download_jobs_preserve_empty_lowercase_no_proxy(self):
+        self.check_http_proxy({"http_proxy": "fixture", "NO_PROXY": "*", "no_proxy": ""})
+
+    def test_download_jobs_ignore_cgi_uppercase_http_proxy(self):
+        self.check_direct_download({"HTTP_PROXY": "http://127.0.0.1:1", "REQUEST_METHOD": "GET"})
 
     def test_download_jobs_trust_configured_ca_bundle(self):
         context, ca_bundle = self.private_ca_server()

@@ -9,6 +9,20 @@ def encoded(value) {
     return groovy.json.JsonOutput.toJson(value).getBytes('UTF-8').encodeBase64().toString()
 }
 
+def proxyEnvironment() {
+    return ['http', 'https', 'no'].collectMany { scheme ->
+        // Match urllib: a present lowercase value wins, even when explicitly empty.
+        def value = System.getenv("${scheme}_proxy")
+        if (value == null) {
+            // Preserve urllib's protection against CGI-injected HTTP_PROXY headers.
+            value = scheme == 'http' && System.getenv('REQUEST_METHOD') != null ?
+                '' : System.getenv("${scheme.toUpperCase()}_PROXY")
+        }
+        // Export the resolved value under both spellings for a consistent task environment.
+        return [value ?: '', value ?: '']
+    }
+}
+
 def referenceInput(value) {
     def path = file(value, checkIfExists: true)
     if (path instanceof List)
@@ -65,7 +79,7 @@ workflow {
     }
     REFERENCE_DOWNLOAD(
         channel.fromList(assets), downloads.toString(), file("$repository/bin/download_reference.py"), ca_bundle,
-        System.getenv('http_proxy') ?: '', System.getenv('https_proxy') ?: ''
+        proxyEnvironment()
     )
     acquired = REFERENCE_DOWNLOAD.out.source.map { kind, result ->
         [kind, referenceInput(new groovy.json.JsonSlurper().parseText(result.text).path)]

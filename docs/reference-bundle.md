@@ -58,13 +58,15 @@ Store hits require sequential reads of the entire source, so multi-gigabyte inpu
 
 The launcher must be able to create/read the store and read task results. Download tasks require outbound source access on the machine executing them: the Docker host/container locally, or SLURM compute nodes in production. On a hit no source network request is made. Container-image acquisition may separately require network access. Docker explicitly mounts the store read/write and runs acquisition with the task host's UID/GID, so the launcher can read the completed source directories on Linux as well as macOS. Docker Desktop must permit sharing that host path. Apptainer explicitly binds the store at the same absolute path. Submission host and compute nodes must see it and the work/output paths consistently, with suitable directory permissions for all participating users. Colons, commas, and newlines in the store path are rejected because they conflict with container bind syntax.
 
-For compute nodes that require a proxy, export lowercase `http_proxy` and `https_proxy` before launching Nextflow. Their launch-environment values are explicitly exported in each `REFERENCE_DOWNLOAD` job, including inside its container, through Nextflow environment inputs. Unset values become empty strings, so no proxy is required for direct access. Use the proxy URL supplied by your cluster administrators, for example:
+For compute nodes that require a proxy, export `HTTP_PROXY`/`HTTPS_PROXY` or their lowercase equivalents before launching Nextflow. `NO_PROXY`/`no_proxy` is also forwarded for hosts that should bypass the proxy. For each pair, a present lowercase value takes precedence, including an explicitly empty value; uppercase is used only when lowercase is absent. The resolved value is exported under both spellings in each `REFERENCE_DOWNLOAD` job, including inside its container, through Nextflow environment inputs. If neither spelling is set, both are exported empty. Use the proxy URL supplied by your cluster administrators, for example:
 
 ```bash
-export http_proxy='http://proxy.example.org:3128'
-export https_proxy="$http_proxy"
+export HTTP_PROXY='http://proxy.example.org:3128'
+export HTTPS_PROXY="$HTTP_PROXY"
 # Rerun your reference-preparation command, adding -resume if appropriate.
 ```
+
+An empty lowercase `http_proxy` or `https_proxy` disables that proxy even if its uppercase counterpart is nonempty. An empty `no_proxy` suppresses an uppercase bypass list. This follows Python's proxy-selection semantics; the CGI safeguard also ignores uppercase-only `HTTP_PROXY` when the launch environment contains `REQUEST_METHOD`. Avoid conflicting definitions across cases: the Nextflow launcher and other tools may use different precedence from the Python download job. See the [proxy environment investigation](research/2026-11-06-proxy-environment.md) for the verified client differences.
 
 If the proxy uses a private CA, the download container also needs that CA certificate. The workflow reads the launch environment's `SSL_CERT_FILE`, stages the referenced PEM file as `download-ca.pem`, and loads its certificates alongside the container's default trusted CAs. Merely forwarding an absolute host path is insufficient when the container cannot access that file. For a cluster that supplies its trusted bundle at `/etc/ssl/certs/ca-bundle.crt`, use:
 
@@ -108,6 +110,8 @@ The initial Linux PR validation on 2026-11-06 exposed a test-fixture cleanup per
 On 2026-11-06, explicit proxy forwarding passed six targeted local tests with Nextflow 26.10.4, Java 21, and Docker 29.9.2: HTTP acquisition through a proxy, HTTPS CONNECT routing (with deliberate tunnel rejection), direct acquisition/reuse, local reference preparation, container pins, and pipeline configuration isolation. Both proxy regressions failed before the fix. Nextflow lint passed with existing upstream deprecation warnings, and all 55 pinned nf-core files matched upstream. The full suite, CI, and SLURM/Apptainer execution were not rerun for this change.
 
 The same day's CA-trust follow-up reproduced `self-signed certificate in certificate chain` with a temporary local CA. Ten targeted tests then passed (89 seconds), covering `SSL_CERT_FILE` staging, an explicit CA bundle, rejection of untrusted chains, hostname mismatches and invalid PEM, plus the six proxy/direct-input/configuration checks above. Nextflow lint and Python compilation passed with the same local toolchain. The cluster's actual CA bundle, SLURM/Apptainer execution, CI, and the full suite were not exercised; the cluster rerun remains necessary.
+
+The subsequent proxy-casing correction passed 17 targeted tests: 14 download-job cases covering both spellings, precedence, explicit empty values, bypass settings, the CGI safeguard and CA forwarding, plus local-file preparation and two configuration checks. The three uppercase HTTP/HTTPS/bypass regressions failed before the correction. Nextflow lint, Python compilation, and whitespace checks passed. The full suite, CI, and cluster execution were not run for this correction; see the [dated investigation](research/2026-11-06-proxy-environment.md).
 
 ## Production with SLURM and Apptainer
 
