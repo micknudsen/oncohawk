@@ -16,6 +16,8 @@ These tests run real reference preparation, alignment, and their composition wit
 
 Each pipeline has its own entrypoint and process configuration under `pipelines/`; modules and execution-environment settings are shared. Default output directories are `reference` and `alignments`, respectively. Override either with `--outdir`.
 
+Reference URLs use a persistent, integrity-checked download store, defaulting to `downloads` in the launch directory. Set `--downloads_dir /persistent/path` to share it across runs independently of Nextflow work directories and `-resume`. See [persistent downloads](docs/reference-bundle.md#persistent-downloads) for integrity, concurrency, and cluster setup.
+
 Before the first official pipeline release, every commit may break functionality; backward compatibility is not maintained.
 
 Prepare a bundle from your own small fixture:

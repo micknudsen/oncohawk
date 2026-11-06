@@ -3,5 +3,6 @@
 /.nextflow*
 /work/
 /reference/
+/downloads/
 /alignments/
 __pycache__/
