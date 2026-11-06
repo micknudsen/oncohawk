@@ -35,7 +35,9 @@ class ReferencePreparationTests(unittest.TestCase):
         # The fixture HTTP server runs on the host; requests must come from tasks.
         self.http_config = self.directory / "http.config"
         self.http_config.write_text(
-            "docker.runOptions = '--platform=linux/amd64 --add-host=host.docker.internal:host-gateway'\n")
+            "docker.runOptions = '--platform=linux/amd64 --add-host=host.docker.internal:host-gateway'\n"
+            # Work-directory cleanup must also handle root-owned downstream Docker outputs on Linux.
+            "docker.fixOwnership = true\n")
 
     @contextmanager
     def http_sources(self, interrupted=None, delay=0):
