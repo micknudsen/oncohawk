@@ -10,11 +10,13 @@ import json
 import os
 from pathlib import Path
 import shutil
+import ssl
 import subprocess
 import tempfile
 import threading
 import time
 import unittest
+from urllib.parse import urlsplit
 
 
 PROJECT = Path(__file__).resolve().parents[1]
@@ -40,7 +42,7 @@ class ReferencePreparationTests(unittest.TestCase):
             "docker.fixOwnership = true\n")
 
     @contextmanager
-    def http_sources(self, interrupted=None, delay=0):
+    def http_sources(self, interrupted=None, delay=0, tls_context=None):
         payloads = {"/source.fa.gz": self.fasta.read_bytes(), "/exclusions.bed": self.bed.read_bytes()}
         requests = Counter()
         request_lock = threading.Lock()
@@ -51,7 +53,7 @@ class ReferencePreparationTests(unittest.TestCase):
                 with request_lock:
                     requests[self.path] += 1
                     attempt = requests[self.path]
-                payload = payloads[self.path]
+                payload = payloads[urlsplit(self.path).path]
                 self.send_response(200)
                 self.send_header("Content-Length", str(len(payload)))
                 self.end_headers()
@@ -63,19 +65,58 @@ class ReferencePreparationTests(unittest.TestCase):
                 else:
                     self.wfile.write(payload)
 
+            def do_CONNECT(self):
+                with request_lock:
+                    requests[self.path] += 1
+                # A deliberate proxy response proves HTTPS reached this fixture.
+                self.send_error(502, "Fixture tunnel rejected")
+
             def log_message(self, *_args):
                 pass
 
         with http.server.ThreadingHTTPServer(("0.0.0.0", 0), Handler) as server:
+            if tls_context:
+                server.socket = tls_context.wrap_socket(server.socket, server_side=True)
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
             try:
-                yield f"http://host.docker.internal:{server.server_port}", requests, payloads
+                scheme = "https" if tls_context else "http"
+                yield f"{scheme}://host.docker.internal:{server.server_port}", requests, payloads
             finally:
                 server.shutdown()
                 thread.join()
 
-    def prepare(self, *arguments, launch_directory=None, default_output=False, project=PROJECT):
+    def private_ca_server(self, hostname="host.docker.internal"):
+        certificates = self.directory / "private CA"
+        certificates.mkdir()
+        (certificates / "ca.cnf").write_text(
+            "[req]\nprompt = no\ndistinguished_name = dn\nx509_extensions = ca\n"
+            "[dn]\nCN = Oncohawk test CA\n[ca]\nbasicConstraints = critical,CA:TRUE\n"
+            "keyUsage = critical,keyCertSign,cRLSign\n")
+        (certificates / "server.cnf").write_text(
+            f"subjectAltName = DNS:{hostname}\nbasicConstraints = critical,CA:FALSE\n"
+            "keyUsage = critical,digitalSignature,keyEncipherment\nextendedKeyUsage = serverAuth\n")
+        commands = [
+            ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "2",
+             "-config", "ca.cnf", "-keyout", "ca.key", "-out", "ca.pem"],
+            ["req", "-new", "-newkey", "rsa:2048", "-nodes", "-subj", f"/CN={hostname}",
+             "-keyout", "server.key", "-out", "server.csr"],
+            ["x509", "-req", "-in", "server.csr", "-CA", "ca.pem", "-CAkey", "ca.key",
+             "-set_serial", "1", "-days", "2", "-extfile", "server.cnf", "-out", "server.pem"],
+        ]
+        for command in commands:
+            result = subprocess.run(["openssl", *command], cwd=certificates, text=True,
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            self.assertEqual(result.returncode, 0, result.stdout)
+        chain = certificates / "chain.pem"
+        chain.write_bytes((certificates / "server.pem").read_bytes()
+                          + (certificates / "ca.pem").read_bytes())
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(chain, certificates / "server.key")
+        return context, certificates / "ca.pem"
+
+    def prepare(self, *arguments, launch_directory=None, default_output=False, project=PROJECT,
+                environment=None):
         self.run_count += 1
         run_number = self.run_count
         command = [
@@ -87,7 +128,7 @@ class ReferencePreparationTests(unittest.TestCase):
             *(["--outdir", str(self.bundle)] if not default_output else []), *arguments,
         ]
         result = subprocess.run(command, cwd=launch_directory or self.directory, text=True,
-                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=environment)
         (self.directory / f"workflow-{run_number}.log").write_text(result.stdout)
         self.assertNotIn("There's no process matching config selector", result.stdout)
         return result
@@ -172,6 +213,136 @@ class ReferencePreparationTests(unittest.TestCase):
         self.assertEqual(manifest["sources"]["fasta"]["uri"], self.fasta)
         self.assertEqual(manifest["sources"]["fasta"]["sha256"], expected)
         self.assertEqual(manifest["sources"]["fasta"]["verified_checksum"], f"sha256:{expected}")
+
+    def check_http_proxy(self, variables):
+        expected = hashlib.sha256(self.fasta.read_bytes()).hexdigest()
+        with self.http_sources() as (proxy, requests, _payloads):
+            self.fasta = "http://reference.invalid/source.fa.gz"
+            self.bed = "http://reference.invalid/exclusions.bed"
+            environment = {key: value for key, value in os.environ.items()
+                           if not key.lower().endswith("_proxy")}
+            environment.pop("REQUEST_METHOD", None)
+            environment.update({name: proxy if value == "fixture" else value
+                                for name, value in variables.items()})
+            environment["NXF_OFFLINE"] = "true"
+            result = self.prepare("--fasta_sha256", expected, environment=environment)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(requests, {self.fasta: 1, self.bed: 1})
+        manifest = json.loads((self.bundle / "bundle.json").read_text())
+        self.assertEqual(manifest["sources"]["fasta"]["sha256"], expected)
+
+    def test_download_jobs_receive_http_proxy(self):
+        self.check_http_proxy({"http_proxy": "fixture"})
+
+    def test_download_jobs_receive_uppercase_http_proxy(self):
+        self.check_http_proxy({"HTTP_PROXY": "fixture"})
+
+    def test_download_jobs_prefer_lowercase_http_proxy(self):
+        self.check_http_proxy({"HTTP_PROXY": "http://127.0.0.1:1", "http_proxy": "fixture"})
+
+    def check_https_proxy(self, variables):
+        with self.http_sources() as (proxy, requests, _payloads):
+            self.fasta = "https://reference.invalid/source.fa.gz"
+            environment = {key: value for key, value in os.environ.items()
+                           if not key.lower().endswith("_proxy")}
+            environment.pop("REQUEST_METHOD", None)
+            environment.update({name: proxy if value == "fixture" else value
+                                for name, value in variables.items()})
+            environment["NXF_OFFLINE"] = "true"
+            result = self.prepare(environment=environment)
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(requests, {"reference.invalid:443": 3})
+        self.assertIn("502 Fixture tunnel rejected", result.stdout)
+        self.assertFalse((self.bundle / "bundle.json").exists())
+
+    def test_download_jobs_receive_https_proxy(self):
+        self.check_https_proxy({"https_proxy": "fixture"})
+
+    def test_download_jobs_receive_uppercase_https_proxy(self):
+        self.check_https_proxy({"HTTPS_PROXY": "fixture"})
+
+    def test_download_jobs_prefer_lowercase_https_proxy(self):
+        self.check_https_proxy({"HTTPS_PROXY": "http://127.0.0.1:1", "https_proxy": "fixture"})
+
+    def check_direct_download(self, variables, https=False):
+        context, ca_bundle = self.private_ca_server() if https else (None, None)
+        with self.http_sources(tls_context=context) as (base, requests, _payloads):
+            self.fasta = f"{base}/source.fa.gz"
+            environment = {key: value for key, value in os.environ.items()
+                           if not key.lower().endswith("_proxy")}
+            environment.pop("REQUEST_METHOD", None)
+            environment.update(variables, NXF_OFFLINE="true")
+            arguments = ["--download_ca_bundle", str(ca_bundle)] if ca_bundle else []
+            result = self.prepare(*arguments, environment=environment)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(requests, {"/source.fa.gz": 1})
+
+    def test_download_jobs_preserve_empty_lowercase_http_proxy(self):
+        self.check_direct_download({"HTTP_PROXY": "http://127.0.0.1:1", "http_proxy": ""})
+
+    def test_download_jobs_preserve_empty_lowercase_https_proxy(self):
+        self.check_direct_download({"HTTPS_PROXY": "http://127.0.0.1:1", "https_proxy": ""}, https=True)
+
+    def test_download_jobs_receive_uppercase_no_proxy(self):
+        self.check_direct_download({"http_proxy": "http://127.0.0.1:1", "NO_PROXY": "host.docker.internal"})
+
+    def test_download_jobs_prefer_lowercase_no_proxy(self):
+        self.check_direct_download({"http_proxy": "http://127.0.0.1:1",
+                                    "NO_PROXY": "wrong.invalid", "no_proxy": "host.docker.internal"})
+
+    def test_download_jobs_preserve_empty_lowercase_no_proxy(self):
+        self.check_http_proxy({"http_proxy": "fixture", "NO_PROXY": "*", "no_proxy": ""})
+
+    def test_download_jobs_ignore_cgi_uppercase_http_proxy(self):
+        self.check_direct_download({"HTTP_PROXY": "http://127.0.0.1:1", "REQUEST_METHOD": "GET"})
+
+    def test_download_jobs_trust_configured_ca_bundle(self):
+        context, ca_bundle = self.private_ca_server()
+        expected = hashlib.sha256(self.fasta.read_bytes()).hexdigest()
+        with self.http_sources(tls_context=context) as (base, requests, _payloads):
+            self.fasta = f"{base}/source.fa.gz"
+            result = self.prepare()
+            self.assertNotEqual(result.returncode, 0, result.stdout)
+            self.assertIn("self-signed certificate in certificate chain", result.stdout)
+            self.assertIn("--download_ca_bundle", result.stdout)
+            self.assertNotIn("retrying", result.stdout)
+            self.assertFalse(requests)
+            result = self.prepare("--download_ca_bundle", str(ca_bundle),
+                                  "--fasta_sha256", expected)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(requests, {"/source.fa.gz": 1})
+        manifest = json.loads((self.bundle / "bundle.json").read_text())
+        self.assertEqual(manifest["sources"]["fasta"]["sha256"], expected)
+
+    def test_download_jobs_use_ssl_cert_file(self):
+        context, ca_bundle = self.private_ca_server()
+        environment = dict(os.environ, SSL_CERT_FILE=str(ca_bundle))
+        with self.http_sources(tls_context=context) as (base, requests, _payloads):
+            self.fasta = f"{base}/source.fa.gz"
+            result = self.prepare(environment=environment)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(requests, {"/source.fa.gz": 1})
+
+    def test_download_ca_bundle_preserves_hostname_verification(self):
+        context, ca_bundle = self.private_ca_server(hostname="wrong.invalid")
+        with self.http_sources(tls_context=context) as (base, requests, _payloads):
+            self.fasta = f"{base}/source.fa.gz"
+            result = self.prepare("--download_ca_bundle", str(ca_bundle))
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("Hostname mismatch", result.stdout)
+        self.assertFalse(requests)
+        self.assertFalse((self.bundle / "bundle.json").exists())
+
+    def test_download_ca_bundle_rejects_invalid_pem(self):
+        ca_bundle = self.directory / "invalid.pem"
+        ca_bundle.write_text("not a certificate\n")
+        with self.http_sources() as (base, requests, _payloads):
+            self.fasta = f"{base}/source.fa.gz"
+            result = self.prepare("--download_ca_bundle", str(ca_bundle))
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("Reference download error", result.stdout)
+        self.assertFalse(requests)
+        self.assertFalse(list((self.directory / "downloads").glob("*/metadata.json")))
 
     def test_acquisition_rejects_checksum_mismatch(self):
         result = self.prepare("--fasta_sha256", "0" * 64)

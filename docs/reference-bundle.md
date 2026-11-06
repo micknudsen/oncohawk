@@ -20,6 +20,7 @@ Required CI checks every installed module file against its pinned upstream Git o
 | `--exclusions_bed` | Local exclusions BED or downloadable BED URL. Defaults to the matching NCBI exclusions below. |
 | `--outdir` | New directory for the completed bundle; default `reference`. Choose a fresh destination for each bundle. |
 | `--downloads_dir` | Persistent source-download store on a local/shared filesystem; default `downloads` relative to the launch directory. Independent of `-work-dir` and `--outdir`. |
+| `--download_ca_bundle` | Optional local/shared PEM file containing additional trusted CA certificates. Defaults to `SSL_CERT_FILE` from the launch environment when set. Staged into download containers. |
 | `--fasta_sha256`, `--exclusions_bed_sha256` | Optional expected SHA256 values for custom source files, checked before preparation. For `.gz` input, hash the compressed source bytes. |
 | `--fasta_identity`, `--exclusions_bed_identity` | Optional JSON objects with `dataset`, `release`, and/or `assembly` strings for custom sources; retained in store and bundle provenance. Also accept maps in a Nextflow params file. Official identity cannot be overridden. |
 
@@ -57,6 +58,25 @@ Store hits require sequential reads of the entire source, so multi-gigabyte inpu
 
 The launcher must be able to create/read the store and read task results. Download tasks require outbound source access on the machine executing them: the Docker host/container locally, or SLURM compute nodes in production. On a hit no source network request is made. Container-image acquisition may separately require network access. Docker explicitly mounts the store read/write and runs acquisition with the task host's UID/GID, so the launcher can read the completed source directories on Linux as well as macOS. Docker Desktop must permit sharing that host path. Apptainer explicitly binds the store at the same absolute path. Submission host and compute nodes must see it and the work/output paths consistently, with suitable directory permissions for all participating users. Colons, commas, and newlines in the store path are rejected because they conflict with container bind syntax.
 
+For compute nodes that require a proxy, export `HTTP_PROXY`/`HTTPS_PROXY` or their lowercase equivalents before launching Nextflow. `NO_PROXY`/`no_proxy` is also forwarded for hosts that should bypass the proxy. For each pair, a present lowercase value takes precedence, including an explicitly empty value; uppercase is used only when lowercase is absent. The resolved value is exported under both spellings in each `REFERENCE_DOWNLOAD` job, including inside its container, through Nextflow environment inputs. If neither spelling is set, both are exported empty. Use the proxy URL supplied by your cluster administrators, for example:
+
+```bash
+export HTTP_PROXY='http://proxy.example.org:3128'
+export HTTPS_PROXY="$HTTP_PROXY"
+# Rerun your reference-preparation command, adding -resume if appropriate.
+```
+
+An empty lowercase `http_proxy` or `https_proxy` disables that proxy even if its uppercase counterpart is nonempty. An empty `no_proxy` suppresses an uppercase bypass list. This follows Python's proxy-selection semantics; the CGI safeguard also ignores uppercase-only `HTTP_PROXY` when the launch environment contains `REQUEST_METHOD`. Avoid conflicting definitions across cases: the Nextflow launcher and other tools may use different precedence from the Python download job. See the [proxy environment investigation](research/2026-11-06-proxy-environment.md) for the verified client differences.
+
+If the proxy uses a private CA, the download container also needs that CA certificate. The workflow reads the launch environment's `SSL_CERT_FILE`, stages the referenced PEM file as `download-ca.pem`, and loads its certificates alongside the container's default trusted CAs. Merely forwarding an absolute host path is insufficient when the container cannot access that file. For a cluster that supplies its trusted bundle at `/etc/ssl/certs/ca-bundle.crt`, use:
+
+```bash
+export SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt
+# Rerun your reference-preparation command with the proxy variables set.
+```
+
+An explicit `--download_ca_bundle /shared/path/approved-ca-bundle.pem` overrides `SSL_CERT_FILE`. The PEM must be readable from the launch host and available for normal Nextflow file staging on compute nodes. `CURL_CA_BUNDLE`, `REQUESTS_CA_BUNDLE`, and `GIT_SSL_CAINFO` are not used by this Python downloader. TLS certificate and hostname checks stay enabled; an untrusted chain or hostname mismatch fails immediately with CA-configuration guidance instead of retrying the same TLS failure. Use the CA bundle approved by the cluster administrator. This setting covers source downloads; container-image acquisition has its own trust configuration. Python's [SSL context documentation](https://docs.python.org/3.12/library/ssl.html#ssl.SSLContext.load_verify_locations) describes loading additional trusted certificates.
+
 ## Local Docker example
 
 Start Docker, put the pinned Nextflow executable on `PATH`, and select the pinned Java runtime. From the repository root, create an illustrative small input:
@@ -86,6 +106,12 @@ A subsequent trace of the 36-base fixture on the same date measured 19.8 MB peak
 On 2026-11-05, the persistent-download enhancement passed all **44** tests in `python3 -m unittest discover -s tests -v` (843 seconds), including controlled HTTP request counts for fresh-run reuse, downstream edits, concurrent acquisition, changed identities/checksums, interrupted transfers, and corrupt/incomplete entries. Nextflow lint and Python compilation passed, and all 55 installed nf-core files matched their pinned upstream revisions. This local run used Nextflow 26.10.4, Docker 29.9.2, the installed Java 25.0.5.0.3 launcher runtime, and Python 3.9.6 for the test harness; tasks used the pinned containers above. CI retains Java 21/Python 3.12 and was not run for this local commit. Native Linux host permissions and SLURM/Apptainer execution were not exercised here; no production reference was downloaded.
 
 The initial Linux PR validation on 2026-11-06 exposed a test-fixture cleanup permission error on Docker-created downstream work files. The reference-test fixture now enables `docker.fixOwnership` so the cache-deletion regression can remove those files as the host user. CI results for this enhancement are tracked in [PR #19](https://github.com/micknudsen/oncohawk/pull/19).
+
+On 2026-11-06, explicit proxy forwarding passed six targeted local tests with Nextflow 26.10.4, Java 21, and Docker 29.9.2: HTTP acquisition through a proxy, HTTPS CONNECT routing (with deliberate tunnel rejection), direct acquisition/reuse, local reference preparation, container pins, and pipeline configuration isolation. Both proxy regressions failed before the fix. Nextflow lint passed with existing upstream deprecation warnings, and all 55 pinned nf-core files matched upstream. The full suite, CI, and SLURM/Apptainer execution were not rerun for this change.
+
+The same day's CA-trust follow-up reproduced `self-signed certificate in certificate chain` with a temporary local CA. Ten targeted tests then passed (89 seconds), covering `SSL_CERT_FILE` staging, an explicit CA bundle, rejection of untrusted chains, hostname mismatches and invalid PEM, plus the six proxy/direct-input/configuration checks above. Nextflow lint and Python compilation passed with the same local toolchain. The cluster's actual CA bundle, SLURM/Apptainer execution, CI, and the full suite were not exercised; the cluster rerun remains necessary.
+
+The subsequent proxy-casing correction passed 17 targeted tests: 14 download-job cases covering both spellings, precedence, explicit empty values, bypass settings, the CGI safeguard and CA forwarding, plus local-file preparation and two configuration checks. The three uppercase HTTP/HTTPS/bypass regressions failed before the correction. Nextflow lint, Python compilation, and whitespace checks passed. The full suite, CI, and cluster execution were not run for this correction; see the [dated investigation](research/2026-11-06-proxy-environment.md).
 
 ## Production with SLURM and Apptainer
 

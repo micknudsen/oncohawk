@@ -9,6 +9,20 @@ def encoded(value) {
     return groovy.json.JsonOutput.toJson(value).getBytes('UTF-8').encodeBase64().toString()
 }
 
+def proxyEnvironment() {
+    return ['http', 'https', 'no'].collectMany { scheme ->
+        // Match urllib: a present lowercase value wins, even when explicitly empty.
+        def value = System.getenv("${scheme}_proxy")
+        if (value == null) {
+            // Preserve urllib's protection against CGI-injected HTTP_PROXY headers.
+            value = scheme == 'http' && System.getenv('REQUEST_METHOD') != null ?
+                '' : System.getenv("${scheme.toUpperCase()}_PROXY")
+        }
+        // Export the resolved value under both spellings for a consistent task environment.
+        return [value ?: '', value ?: '']
+    }
+}
+
 def referenceInput(value) {
     def path = file(value, checkIfExists: true)
     if (path instanceof List)
@@ -54,12 +68,19 @@ workflow {
     downloads = file(params.downloads_dir).toAbsolutePath().normalize()
     if (downloads.toUri().scheme != 'file' || downloads.toString() =~ /[:\r\n,]/)
         error('--downloads_dir must be a local/shared filesystem directory without colons, commas or newlines')
+    ca_bundle = params.download_ca_bundle ? file(params.download_ca_bundle, checkIfExists: true) : []
+    if (params.download_ca_bundle && (ca_bundle instanceof List ||
+            ca_bundle.toUri().scheme != 'file' || !ca_bundle.isFile()))
+        error('--download_ca_bundle must identify one local/shared PEM file')
     if (remote)
         downloads.mkdirs()
     assets = remote.collect { kind, uri ->
         [kind, encoded([kind: kind, uri: uri, expected: checksums[kind], identity: identities[kind]])]
     }
-    REFERENCE_DOWNLOAD(channel.fromList(assets), downloads.toString(), file("$repository/bin/download_reference.py"))
+    REFERENCE_DOWNLOAD(
+        channel.fromList(assets), downloads.toString(), file("$repository/bin/download_reference.py"), ca_bundle,
+        proxyEnvironment()
+    )
     acquired = REFERENCE_DOWNLOAD.out.source.map { kind, result ->
         [kind, referenceInput(new groovy.json.JsonSlurper().parseText(result.text).path)]
     }.mix(channel.fromList(local.collect { kind, uri -> [kind, referenceInput(uri)] }))

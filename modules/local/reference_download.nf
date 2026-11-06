@@ -13,13 +13,16 @@ process REFERENCE_DOWNLOAD {
     tuple val(kind), val(asset)
     val downloads_dir
     path downloader
+    path ca_bundle, stageAs: 'download-ca.pem'
+    tuple env('http_proxy'), env('HTTP_PROXY'), env('https_proxy'), env('HTTPS_PROXY'), env('no_proxy'), env('NO_PROXY')
 
     output:
     tuple val(kind), path('download.json'), emit: source
 
     script:
     def store = downloads_dir.replace("'", "'\"'\"'")
+    def ca_option = ca_bundle ? "--ca-bundle '${ca_bundle}'" : ''
     """
-    python3 '${downloader}' '${store}' '${asset}'
+    python3 '${downloader}' '${store}' '${asset}' ${ca_option}
     """
 }
