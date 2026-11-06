@@ -57,6 +57,14 @@ Store hits require sequential reads of the entire source, so multi-gigabyte inpu
 
 The launcher must be able to create/read the store and read task results. Download tasks require outbound source access on the machine executing them: the Docker host/container locally, or SLURM compute nodes in production. On a hit no source network request is made. Container-image acquisition may separately require network access. Docker explicitly mounts the store read/write and runs acquisition with the task host's UID/GID, so the launcher can read the completed source directories on Linux as well as macOS. Docker Desktop must permit sharing that host path. Apptainer explicitly binds the store at the same absolute path. Submission host and compute nodes must see it and the work/output paths consistently, with suitable directory permissions for all participating users. Colons, commas, and newlines in the store path are rejected because they conflict with container bind syntax.
 
+For compute nodes that require a proxy, export lowercase `http_proxy` and `https_proxy` before launching Nextflow. Their launch-environment values are explicitly exported in each `REFERENCE_DOWNLOAD` job, including inside its container, through Nextflow environment inputs. Unset values become empty strings, so no proxy is required for direct access. Use the proxy URL supplied by your cluster administrators, for example:
+
+```bash
+export http_proxy='http://proxy.example.org:3128'
+export https_proxy="$http_proxy"
+# Rerun your reference-preparation command, adding -resume if appropriate.
+```
+
 ## Local Docker example
 
 Start Docker, put the pinned Nextflow executable on `PATH`, and select the pinned Java runtime. From the repository root, create an illustrative small input:
@@ -86,6 +94,8 @@ A subsequent trace of the 36-base fixture on the same date measured 19.8 MB peak
 On 2026-11-05, the persistent-download enhancement passed all **44** tests in `python3 -m unittest discover -s tests -v` (843 seconds), including controlled HTTP request counts for fresh-run reuse, downstream edits, concurrent acquisition, changed identities/checksums, interrupted transfers, and corrupt/incomplete entries. Nextflow lint and Python compilation passed, and all 55 installed nf-core files matched their pinned upstream revisions. This local run used Nextflow 26.10.4, Docker 29.9.2, the installed Java 25.0.5.0.3 launcher runtime, and Python 3.9.6 for the test harness; tasks used the pinned containers above. CI retains Java 21/Python 3.12 and was not run for this local commit. Native Linux host permissions and SLURM/Apptainer execution were not exercised here; no production reference was downloaded.
 
 The initial Linux PR validation on 2026-11-06 exposed a test-fixture cleanup permission error on Docker-created downstream work files. The reference-test fixture now enables `docker.fixOwnership` so the cache-deletion regression can remove those files as the host user. CI results for this enhancement are tracked in [PR #19](https://github.com/micknudsen/oncohawk/pull/19).
+
+On 2026-11-06, explicit proxy forwarding passed six targeted local tests with Nextflow 26.10.4, Java 21, and Docker 29.9.2: HTTP acquisition through a proxy, HTTPS CONNECT routing (with deliberate tunnel rejection), direct acquisition/reuse, local reference preparation, container pins, and pipeline configuration isolation. Both proxy regressions failed before the fix. Nextflow lint passed with existing upstream deprecation warnings, and all 55 pinned nf-core files matched upstream. The full suite, CI, and SLURM/Apptainer execution were not rerun for this change.
 
 ## Production with SLURM and Apptainer
 

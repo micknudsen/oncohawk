@@ -15,6 +15,7 @@ import tempfile
 import threading
 import time
 import unittest
+from urllib.parse import urlsplit
 
 
 PROJECT = Path(__file__).resolve().parents[1]
@@ -51,7 +52,7 @@ class ReferencePreparationTests(unittest.TestCase):
                 with request_lock:
                     requests[self.path] += 1
                     attempt = requests[self.path]
-                payload = payloads[self.path]
+                payload = payloads[urlsplit(self.path).path]
                 self.send_response(200)
                 self.send_header("Content-Length", str(len(payload)))
                 self.end_headers()
@@ -62,6 +63,12 @@ class ReferencePreparationTests(unittest.TestCase):
                     self.close_connection = True
                 else:
                     self.wfile.write(payload)
+
+            def do_CONNECT(self):
+                with request_lock:
+                    requests[self.path] += 1
+                # A deliberate proxy response proves HTTPS reached this fixture.
+                self.send_error(502, "Fixture tunnel rejected")
 
             def log_message(self, *_args):
                 pass
@@ -75,7 +82,8 @@ class ReferencePreparationTests(unittest.TestCase):
                 server.shutdown()
                 thread.join()
 
-    def prepare(self, *arguments, launch_directory=None, default_output=False, project=PROJECT):
+    def prepare(self, *arguments, launch_directory=None, default_output=False, project=PROJECT,
+                environment=None):
         self.run_count += 1
         run_number = self.run_count
         command = [
@@ -87,7 +95,7 @@ class ReferencePreparationTests(unittest.TestCase):
             *(["--outdir", str(self.bundle)] if not default_output else []), *arguments,
         ]
         result = subprocess.run(command, cwd=launch_directory or self.directory, text=True,
-                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=environment)
         (self.directory / f"workflow-{run_number}.log").write_text(result.stdout)
         self.assertNotIn("There's no process matching config selector", result.stdout)
         return result
@@ -172,6 +180,34 @@ class ReferencePreparationTests(unittest.TestCase):
         self.assertEqual(manifest["sources"]["fasta"]["uri"], self.fasta)
         self.assertEqual(manifest["sources"]["fasta"]["sha256"], expected)
         self.assertEqual(manifest["sources"]["fasta"]["verified_checksum"], f"sha256:{expected}")
+
+    def test_download_jobs_receive_http_proxy(self):
+        expected = hashlib.sha256(self.fasta.read_bytes()).hexdigest()
+        with self.http_sources() as (proxy, requests, _payloads):
+            self.fasta = "http://reference.invalid/source.fa.gz"
+            self.bed = "http://reference.invalid/exclusions.bed"
+            environment = {key: value for key, value in os.environ.items()
+                           if not key.lower().endswith("_proxy")}
+            environment.update(http_proxy=proxy, https_proxy="http://127.0.0.1:1",
+                               NXF_OFFLINE="true")
+            result = self.prepare("--fasta_sha256", expected, environment=environment)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(requests, {self.fasta: 1, self.bed: 1})
+        manifest = json.loads((self.bundle / "bundle.json").read_text())
+        self.assertEqual(manifest["sources"]["fasta"]["sha256"], expected)
+
+    def test_download_jobs_receive_https_proxy(self):
+        with self.http_sources() as (proxy, requests, _payloads):
+            self.fasta = "https://reference.invalid/source.fa.gz"
+            environment = {key: value for key, value in os.environ.items()
+                           if not key.lower().endswith("_proxy")}
+            environment.update(http_proxy="http://127.0.0.1:1", https_proxy=proxy,
+                               NXF_OFFLINE="true")
+            result = self.prepare(environment=environment)
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(requests, {"reference.invalid:443": 3})
+        self.assertIn("502 Fixture tunnel rejected", result.stdout)
+        self.assertFalse((self.bundle / "bundle.json").exists())
 
     def test_acquisition_rejects_checksum_mismatch(self):
         result = self.prepare("--fasta_sha256", "0" * 64)

@@ -13,6 +13,8 @@ process REFERENCE_DOWNLOAD {
     tuple val(kind), val(asset)
     val downloads_dir
     path downloader
+    env 'http_proxy'
+    env 'https_proxy'
 
     output:
     tuple val(kind), path('download.json'), emit: source

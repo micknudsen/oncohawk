@@ -59,7 +59,10 @@ workflow {
     assets = remote.collect { kind, uri ->
         [kind, encoded([kind: kind, uri: uri, expected: checksums[kind], identity: identities[kind]])]
     }
-    REFERENCE_DOWNLOAD(channel.fromList(assets), downloads.toString(), file("$repository/bin/download_reference.py"))
+    REFERENCE_DOWNLOAD(
+        channel.fromList(assets), downloads.toString(), file("$repository/bin/download_reference.py"),
+        System.getenv('http_proxy') ?: '', System.getenv('https_proxy') ?: ''
+    )
     acquired = REFERENCE_DOWNLOAD.out.source.map { kind, result ->
         [kind, referenceInput(new groovy.json.JsonSlurper().parseText(result.text).path)]
     }.mix(channel.fromList(local.collect { kind, uri -> [kind, referenceInput(uri)] }))
