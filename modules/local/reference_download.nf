@@ -14,7 +14,7 @@ process REFERENCE_DOWNLOAD {
     val downloads_dir
     path downloader
     path ca_bundle, stageAs: 'download-ca.pem'
-    tuple env('http_proxy'), env('HTTP_PROXY'), env('https_proxy'), env('HTTPS_PROXY'), env('no_proxy'), env('NO_PROXY')
+    val proxy_environment
 
     output:
     tuple val(kind), path('download.json'), emit: source
@@ -22,7 +22,13 @@ process REFERENCE_DOWNLOAD {
     script:
     def store = downloads_dir.replace("'", "'\"'\"'")
     def ca_option = ca_bundle ? "--ca-bundle '${ca_bundle}'" : ''
+    // Empty values are intentional; env inputs warn about them during task preparation.
+    // Export inside the container so inherited settings cannot override launch-time choices.
+    def proxy_exports = proxy_environment.collect { name, value ->
+        "export ${name}='${value.replace("'", "'\"'\"'")}'"
+    }.join('\n')
     """
+    ${proxy_exports}
     python3 '${downloader}' '${store}' '${asset}' ${ca_option}
     """
 }

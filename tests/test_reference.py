@@ -131,6 +131,9 @@ class ReferencePreparationTests(unittest.TestCase):
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=environment)
         (self.directory / f"workflow-{run_number}.log").write_text(result.stdout)
         self.assertNotIn("There's no process matching config selector", result.stdout)
+        self.assertNotRegex(result.stdout,
+                            r"WARN: Environment variable `(?:http|https|no)_proxy` evaluates to an empty value|"
+                            r"WARN: Environment variable `(?:HTTP|HTTPS|NO)_PROXY` evaluates to an empty value")
         return result
 
     def test_prepares_masked_indexed_bundle(self):
@@ -283,12 +286,19 @@ class ReferencePreparationTests(unittest.TestCase):
     def test_download_jobs_preserve_empty_lowercase_https_proxy(self):
         self.check_direct_download({"HTTPS_PROXY": "http://127.0.0.1:1", "https_proxy": ""}, https=True)
 
+    def test_download_jobs_without_proxy_settings(self):
+        self.check_direct_download({})
+
     def test_download_jobs_receive_uppercase_no_proxy(self):
         self.check_direct_download({"http_proxy": "http://127.0.0.1:1", "NO_PROXY": "host.docker.internal"})
 
     def test_download_jobs_prefer_lowercase_no_proxy(self):
         self.check_direct_download({"http_proxy": "http://127.0.0.1:1",
                                     "NO_PROXY": "wrong.invalid", "no_proxy": "host.docker.internal"})
+
+    def test_download_jobs_quote_proxy_environment(self):
+        self.check_direct_download({"http_proxy": "http://127.0.0.1:1",
+                                    "no_proxy": "'unused.invalid,$(exit 1),`exit 1`,host.docker.internal"})
 
     def test_download_jobs_preserve_empty_lowercase_no_proxy(self):
         self.check_http_proxy({"http_proxy": "fixture", "NO_PROXY": "*", "no_proxy": ""})

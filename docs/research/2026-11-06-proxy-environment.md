@@ -70,3 +70,13 @@ The reference workflow now resolves HTTP, HTTPS, and proxy-bypass pairs from the
 The uppercase HTTP, HTTPS, and bypass regression tests were run before implementation and all three failed through the public workflow in the pinned Docker container.
 
 After implementation, 14 download-job tests passed (162 seconds): both proxy spellings, lowercase conflict precedence, explicitly empty HTTP/HTTPS/bypass values, uppercase bypass forwarding, the CGI safeguard, and both CA-bundle configuration routes. Local-file bundle preparation and both pipeline-configuration checks also passed, for 17 targeted tests total. Nextflow lint passed with existing upstream deprecation warnings; Python compilation and whitespace checks passed. These used Nextflow 26.10.4, Java 21, and the pinned Docker task images. The full suite, CI, and SLURM/Apptainer execution were not run for this change.
+
+## Empty-value warning correction — 2026-11-07
+
+The environment-input implementation above caused Nextflow to warn for each intentionally empty proxy value in every download task. An unset bypass pair therefore produced `no_proxy` and `NO_PROXY` warnings twice when downloading both FASTA and exclusions BED. The Docker-backed HTTP proxy test reproduced these warnings on both Nextflow 26.10.4 and the repository's pinned 26.10.5, despite successful acquisition. A minimal 26.10.5 task with only `env('no_proxy')`, an empty input, and a `true` script reproduced the warning without Docker or downloads.
+
+The workflow now passes the resolved proxy settings as a value map. `REFERENCE_DOWNLOAD` exports both spellings in its task script using shell quoting, including intentional empty strings. This avoids the environment-input warning while retaining lowercase precedence, explicit disabling, the CGI safeguard, and overrides of inherited container settings. No global warning suppression is used.
+
+The public-workflow test helper now rejects these warnings. Additional cases cover a launch environment with no proxy settings and a bypass list containing shell metacharacters, alongside the existing proxy routing, precedence, empty-value, bypass, and CA checks.
+
+Validation used Nextflow 26.10.5, Java 21, and the pinned Docker images: all 16 download-job tests passed (167 seconds), as did both pipeline-configuration tests. The original failing HTTP proxy test also passed individually after the fix. Nextflow lint passed with three existing nf-core `when` deprecation warnings; Python compilation and whitespace checks passed. The full suite, CI, and SLURM/Apptainer execution were not run.
