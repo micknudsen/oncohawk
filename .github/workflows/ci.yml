@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
-      NXF_VER: '26.10.4'
+      NXF_VER: '26.10.5'
       NXF_ANSI_LOG: 'false'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -36,10 +36,10 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/bin"
           curl --fail --location --retry 3 \
-            https://github.com/nextflow-io/nextflow/releases/download/v26.10.4/nextflow-26.10.4-dist \
+            https://github.com/nextflow-io/nextflow/releases/download/v26.10.5/nextflow-26.10.5-dist \
             --output "$RUNNER_TEMP/bin/nextflow"
           # SHA256 published in the official GitHub release asset metadata.
-          echo "2cbda6e7fdbbb1e7a413973eff549653f566ba6bb7bdfbb58eb78d0f831fdec4  $RUNNER_TEMP/bin/nextflow" | sha256sum --check --strict
+          echo "b030030c06040bf5f13ac423c318d146c95e8d1d82f5022799dcb24738bccf3e  $RUNNER_TEMP/bin/nextflow" | sha256sum --check --strict
           chmod +x "$RUNNER_TEMP/bin/nextflow"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - name: Check runtime versions
