@@ -10,7 +10,7 @@ def encoded(value) {
 }
 
 def proxyEnvironment() {
-    return ['http', 'https', 'no'].collectMany { scheme ->
+    return ['http', 'https', 'no'].collectEntries { scheme ->
         // Match urllib: a present lowercase value wins, even when explicitly empty.
         def value = System.getenv("${scheme}_proxy")
         if (value == null) {
@@ -19,7 +19,8 @@ def proxyEnvironment() {
                 '' : System.getenv("${scheme.toUpperCase()}_PROXY")
         }
         // Export the resolved value under both spellings for a consistent task environment.
-        return [value ?: '', value ?: '']
+        return [("${scheme}_proxy".toString()): value ?: '',
+                ("${scheme.toUpperCase()}_PROXY".toString()): value ?: '']
     }
 }
 
