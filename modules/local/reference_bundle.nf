@@ -10,6 +10,7 @@ process REFERENCE_BUNDLE {
     val metadata
     val versions
     path packager
+    val reference_label
 
     output:
     path 'bundle/*'

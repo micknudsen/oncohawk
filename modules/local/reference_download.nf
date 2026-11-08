@@ -15,6 +15,7 @@ process REFERENCE_DOWNLOAD {
     path downloader
     path ca_bundle, stageAs: 'download-ca.pem'
     val proxy_environment
+    val reference_label
 
     output:
     tuple val(kind), path('download.json'), emit: source

@@ -3,6 +3,7 @@
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+import csv
 import gzip
 import hashlib
 import http.server
@@ -139,6 +140,7 @@ class ReferencePreparationTests(unittest.TestCase):
     def test_prepares_masked_indexed_bundle(self):
         result = self.prepare(launch_directory=PROJECT)
         self.assertEqual(result.returncode, 0, result.stdout)
+        self.assert_reference_labels("source.fa.gz")
         sequences = {}
         for line in (self.bundle / "reference.fa").read_text().splitlines():
             if line.startswith(">"):
@@ -183,6 +185,53 @@ class ReferencePreparationTests(unittest.TestCase):
         for artifact, checksum in manifest["checksums"].items():
             self.assertFalse(Path(artifact).is_absolute())
             self.assertEqual(hashlib.sha256((self.bundle / artifact).read_bytes()).hexdigest(), checksum)
+
+    def assert_reference_labels(self, label, downloads=False, compressed=True):
+        with (self.directory / f"trace-{self.run_count}.tsv").open() as handle:
+            names = [row["name"] for row in csv.DictReader(handle, delimiter="\t")]
+        expected = [f"{process} ({label})" for process in
+                    ["REFERENCE_VALIDATE", "BEDTOOLS_MASKFASTA", "BWAMEM2_INDEX", "REFERENCE_BUNDLE"]]
+        if compressed:
+            expected.append(f"GUNZIP ({label})")
+        if downloads:
+            expected.extend(f"REFERENCE_DOWNLOAD ({label} / {kind})" for kind in ["fasta", "exclusions_bed"])
+        self.assertCountEqual(names, expected)
+
+    def test_reference_labels_use_url_basename_and_preserve_download_reuse(self):
+        with self.http_sources() as (base, requests, _payloads):
+            self.fasta = f"{base}/source.fa.gz?download=1#reference"
+            self.bed = f"{base}/exclusions.bed"
+            for destination in ["first-bundle", "second-bundle"]:
+                self.bundle = self.directory / destination
+                result = self.prepare()
+                self.assertEqual(result.returncode, 0, result.stdout)
+                self.assert_reference_labels("source.fa.gz", downloads=True)
+                manifest = json.loads((self.bundle / "bundle.json").read_text())
+                self.assertEqual(manifest["sources"]["fasta"]["identity"], {})
+                self.assertEqual(manifest["fasta"], "reference.fa")
+                self.assertEqual(manifest["bwamem2_index"], "bwamem2/reference.fa")
+        self.assertEqual(requests, {"/source.fa.gz?download=1": 1, "/exclusions.bed": 1})
+
+    def test_reference_label_uses_builtin_fasta_basename(self):
+        base = ("https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/"
+                "GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/")
+        # Reject CONNECT locally: exercise the real default URLs without fetching production data.
+        with self.http_sources() as (proxy, requests, _payloads):
+            self.fasta = base + "GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.gz"
+            self.bed = base + "GCA_000001405.15_GRCh38_GRC_exclusions.bed"
+            environment = {key: value for key, value in os.environ.items()
+                           if not key.lower().endswith("_proxy")}
+            environment.update(https_proxy=proxy, NXF_OFFLINE="true")
+            result = self.prepare(environment=environment)
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("502 Fixture tunnel rejected", result.stdout)
+        self.assertTrue(requests)
+        with (self.directory / f"trace-{self.run_count}.tsv").open() as handle:
+            names = [row["name"] for row in csv.DictReader(handle, delimiter="\t")]
+        self.assertTrue(names)
+        label = "GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.gz"
+        self.assertTrue(set(names) <= {f"REFERENCE_DOWNLOAD ({label} / fasta)",
+                                       f"REFERENCE_DOWNLOAD ({label} / exclusions_bed)"}, names)
 
     def test_defaults_to_reference_in_launch_directory(self):
         result = self.prepare(default_output=True)
@@ -555,6 +604,7 @@ class ReferencePreparationTests(unittest.TestCase):
         self.fasta.write_bytes(original)
         result = self.prepare()
         self.assertEqual(result.returncode, 0, result.stdout)
+        self.assert_reference_labels("reference.fa", compressed=False)
         self.assertEqual(self.fasta.read_bytes(), original)
         self.assertFalse((self.directory / "downloads").exists())
         self.assertIn("ACGTNNNNACGTACGTACGT", (self.bundle / "reference.fa").read_text())

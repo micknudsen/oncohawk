@@ -51,6 +51,8 @@ The same `ID` appears in the header and each read's `RG` tag. The encoded identi
 
 Internal row identities are hashes of the read-group tuple and canonical mate paths, independent of CSV row order. Internal output names begin with `_`, outside the accepted source-basename and public-identifier namespace. This keeps intermediate outputs from overwriting staged input symlinks or colliding with final sample filenames.
 
+CUTADAPT and BWAMEM2_MEM task labels use `sample / library / flowcell / lane / <12-character hash>` in the console, trace, and execution reports. The suffix is the first 12 characters of the internal row hash, distinguishing separate FASTQ pairs from the same sample/library/flowcell/lane. Both tasks retain the same label for a pair, including when sample-sheet rows are reordered. Display labels are configured separately from the full internal IDs and intermediate filenames; the nf-core modules remain unchanged.
+
 ## Local Docker execution
 
 Use the [pinned development runtimes](reference-bundle.md#runtime-pins) and a running Docker installation. Prepare a compact bundle and matching gzipped read pairs, then run from the checkout:
@@ -128,5 +130,7 @@ On 2026-11-01, a real public alignment run succeeded on the ARM64 development Ma
 | samtools in the final indexing container | 1.25 |
 
 Run `python3 -m unittest discover -s tests -v` to exercise the public reference-preparation and alignment interfaces and their composition with real containers. The **Tests and validation** CI check runs the same suite. Tests assert observable BAM content and input/tool failures rather than private parser helpers.
+
+On 2026-11-08, the readable-task-label regression failed against the old hash-only labels, then passed after the change using Nextflow 26.10.5, Java 21, and the pinned Docker images (65 seconds). It checks both processes' trace labels, distinct chunks sharing one read group, row-reordering stability, and the existing BAM/read-group/duplicate-marking assertions. Both pipeline-configuration tests also passed, along with Nextflow lint (existing deprecation warnings), Python compilation, and whitespace checks. The full suite, CI, and SLURM/Apptainer execution were not run for this change.
 
 Adapter acceptance uses designed read sequences to check R1-only, R2-only, both-mate, omitted, and blank settings in final BAMs. It also checks regular 3′ matching, the 14/15-bp boundary after trimming, mate synchronization, supplementary sequence preservation, empty indexed BAMs, and malformed settings. Multiple-input acceptance covers sample isolation, read-group associations, duplicates across lanes within one library, independent libraries, repeated chunks of one read group, input reuse errors, and mixed row-local adapters through reference preparation and final BAM/index queries.
