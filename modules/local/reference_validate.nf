@@ -8,6 +8,7 @@ process REFERENCE_VALIDATE {
     path archive, stageAs: 'unmasked_source'
     val policy
     path validator
+    val reference_label
 
     output:
     path 'validated_exclusions.bed', emit: exclusions_bed

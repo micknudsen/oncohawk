@@ -302,6 +302,19 @@ class AlignmentTests(unittest.TestCase):
             self.sample_rows(ordered)
             result = self.align()
             self.assertEqual(result.returncode, 0, result.stdout)
+            with (self.directory / f"trace-{self.run_count}.tsv").open() as handle:
+                trace = list(csv.DictReader(handle, delimiter="\t"))
+            labels = {}
+            for process in ["CUTADAPT", "BWAMEM2_MEM"]:
+                names = [task["name"] for task in trace if task["name"].startswith(f"{process} (")]
+                self.assertEqual(len(names), 3)
+                labels[process] = [name[len(process) + 2:-1] for name in names]
+                self.assertEqual(len(set(labels[process])), 3)
+                for label_text in labels[process]:
+                    self.assertRegex(label_text, r"^S1 / L1 / (FC\.1 / 2|FC / 1\.2) / [0-9a-f]{12}$")
+                self.assertEqual(sum(label_text.startswith("S1 / L1 / FC.1 / 2 / ")
+                                     for label_text in labels[process]), 2)
+            self.assertEqual(set(labels["CUTADAPT"]), set(labels["BWAMEM2_MEM"]))
             header = self.samtools("view", "-H", "/data/S1.bam")
             groups = read_groups(header)
             self.assertEqual(len(groups), 2)
@@ -323,7 +336,8 @@ class AlignmentTests(unittest.TestCase):
             self.assertEqual(set(identities), {"chunk1", "chunk2", "other_lane"})
             self.assertEqual(identities["chunk1"], identities["chunk2"])
             self.assertNotEqual(identities["chunk1"], identities["other_lane"])
-            current = (sorted(tuple(sorted(group.items())) for group in groups), sorted(observed))
+            current = (sorted(tuple(sorted(group.items())) for group in groups), sorted(observed),
+                       sorted(labels["CUTADAPT"]))
             if previous is not None:
                 self.assertEqual(current, previous)
             previous = current

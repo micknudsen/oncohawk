@@ -119,7 +119,9 @@ def sampleInputs(table, sheet) {
         def task_identity = groovy.json.JsonOutput.toJson([identity, real_reads])
         def task_id = java.security.MessageDigest.getInstance('SHA-256')
             .digest(task_identity.getBytes('UTF-8')).encodeHex().toString()
+        def task_label = "${row.sample} / ${row.library} / ${row.flowcell} / ${row.lane} / ${task_id.take(12)}"
         [[id: "row_${task_id}".toString(), sample: row.sample, single_end: false, read_group: group,
+          task_label: task_label.toString(),
           r1_adapter: options.r1_adapter, r2_adapter: options.r2_adapter],
          reads]
     }

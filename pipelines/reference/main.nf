@@ -9,6 +9,12 @@ def encoded(value) {
     return groovy.json.JsonOutput.toJson(value).getBytes('UTF-8').encodeBase64().toString()
 }
 
+def referenceLabel(fasta) {
+    def source = fasta.toString()
+    def path = source ==~ /(?i)^(https?|ftp|file):\/\/.*/ ? new java.net.URI(source).path : source
+    return new java.io.File(path).name
+}
+
 def proxyEnvironment() {
     return ['http', 'https', 'no'].collectEntries { scheme ->
         // Match urllib: a present lowercase value wins, even when explicitly empty.
@@ -54,6 +60,7 @@ workflow {
     ncbi_base = 'https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/'
     official_fasta = params.fasta == ncbi_base + 'GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.gz'
     official_exclusions_bed = params.exclusions_bed == ncbi_base + 'GCA_000001405.15_GRCh38_GRC_exclusions.bed'
+    reference_label = referenceLabel(params.fasta)
     checksums = [
         fasta: [md5: official_fasta ? 'a08035b6a6e31780e96a34008ff21bd6' : null, sha256: params.fasta_sha256],
         exclusions_bed: [md5: official_exclusions_bed ? 'bf5c011e0342f355422144eb3547b5d0' : null, sha256: params.exclusions_bed_sha256]
@@ -80,7 +87,7 @@ workflow {
     }
     REFERENCE_DOWNLOAD(
         channel.fromList(assets), downloads.toString(), file("$repository/bin/download_reference.py"), ca_bundle,
-        proxyEnvironment()
+        proxyEnvironment(), reference_label
     )
     acquired = REFERENCE_DOWNLOAD.out.source.map { kind, result ->
         [kind, referenceInput(new groovy.json.JsonSlurper().parseText(result.text).path)]
@@ -91,10 +98,12 @@ workflow {
         compressed: path.name.endsWith('.gz')
         plain: true
     }
-    GUNZIP(inputs.compressed.map { path -> [[id: 'reference'], path] })
+    GUNZIP(inputs.compressed.map { path -> [[id: 'reference', reference_label: reference_label], path] })
     uncompressed = GUNZIP.out.gunzip.map { _meta, path -> path }.mix(inputs.plain)
-    REFERENCE_VALIDATE(uncompressed, exclusions_bed, fasta, policy, file("$repository/bin/validate_reference.py"))
-    BEDTOOLS_MASKFASTA(REFERENCE_VALIDATE.out.exclusions_bed.map { path -> [[id: 'reference'], path] }, REFERENCE_VALIDATE.out.fasta)
+    REFERENCE_VALIDATE(uncompressed, exclusions_bed, fasta, policy, file("$repository/bin/validate_reference.py"), reference_label)
+    BEDTOOLS_MASKFASTA(REFERENCE_VALIDATE.out.exclusions_bed.map { path ->
+        [[id: 'reference', reference_label: reference_label], path]
+    }, REFERENCE_VALIDATE.out.fasta)
     BWAMEM2_INDEX(BEDTOOLS_MASKFASTA.out.fasta)
     modules = new groovy.json.JsonSlurper().parseText(file("$repository/modules.json").text)
     source_paths = [
@@ -120,6 +129,6 @@ workflow {
         .collect(flat: false).map { entries -> encoded(entries) }
     REFERENCE_BUNDLE(
         BEDTOOLS_MASKFASTA.out.fasta.map { _meta, path -> path }, BWAMEM2_INDEX.out.index.map { _meta, path -> path },
-        REFERENCE_VALIDATE.out.report, metadata, versions, file("$repository/bin/package_reference.py")
+        REFERENCE_VALIDATE.out.report, metadata, versions, file("$repository/bin/package_reference.py"), reference_label
     )
 }

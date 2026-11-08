@@ -35,9 +35,14 @@ jobs:
         shell: bash
         run: |
           mkdir -p "$RUNNER_TEMP/bin"
-          curl --fail --location --retry 3 \
+          if ! curl --fail --location --retry 3 \
             https://github.com/nextflow-io/nextflow/releases/download/v26.10.5/nextflow-26.10.5-dist \
-            --output "$RUNNER_TEMP/bin/nextflow"
+            --output "$RUNNER_TEMP/bin/nextflow"; then
+            # The official asset API avoids failures on the release-page download route.
+            curl --fail --location --retry 3 --header 'Accept: application/octet-stream' \
+              https://api.github.com/repos/nextflow-io/nextflow/releases/assets/702621068 \
+              --output "$RUNNER_TEMP/bin/nextflow"
+          fi
           # SHA256 published in the official GitHub release asset metadata.
           echo "b030030c06040bf5f13ac423c318d146c95e8d1d82f5022799dcb24738bccf3e  $RUNNER_TEMP/bin/nextflow" | sha256sum --check --strict
           chmod +x "$RUNNER_TEMP/bin/nextflow"
