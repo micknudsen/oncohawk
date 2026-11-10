@@ -63,7 +63,7 @@ class PipelineConfigurationTests(unittest.TestCase):
                             if enabled:
                                 self.assertEqual(enabled.group(1), "false", result.stdout)
                         if selected != "oncohawk":
-                            self.assertNotIn("params._oncohawk_output_state", result.stdout)
+                            self.assertNotIn("params._oncohawk_output_path", result.stdout)
                         if selected != "prepare_knowledge_bundle":
                             expected = "reference" if selected == "prepare_reference_bundle" else "results"
                             self.assertIn(f"params.outdir = '{expected}'", result.stdout)
@@ -99,6 +99,33 @@ class PipelineConfigurationTests(unittest.TestCase):
                                      "process.'withName:BWAMEM2_MEM'.memory = '6 GB'",
                                      "outputDir = 'results'", "trace.directory = 'execution'"]:
                         self.assertIn(expected, result.stdout)
+
+    def test_analysis_config_inspection_preserves_existing_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "results"
+            sentinel = output / "existing.txt"
+            selection = Path(directory) / "selection.config"
+            selection.write_text("params.workflow = 'oncohawk'\n"
+                                 f"includeConfig '{PROJECT / 'nextflow.config'}'\n")
+            for prefix, profile in [([], []), ([], ["-profile", "slurm"]),
+                                    (["-C", str(selection)], [])]:
+                with self.subTest(config=prefix, profile=profile):
+                    command = [os.environ.get("NEXTFLOW", "nextflow"), *prefix,
+                               "config", str(PROJECT), *profile, "-flat"]
+                    fresh = subprocess.run(command, cwd=directory, text=True,
+                                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                    self.assertEqual(fresh.returncode, 0, fresh.stdout)
+                    self.assertFalse(output.exists())
+                    output.mkdir()
+                    sentinel.write_bytes(b"existing results")
+                    result = subprocess.run(command, cwd=directory, text=True,
+                                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                    self.assertNotEqual(result.returncode, 0, result.stdout)
+                    self.assertIn("Alignment output directory already exists", result.stdout)
+                    self.assertEqual(list(output.iterdir()), [sentinel])
+                    self.assertEqual(sentinel.read_bytes(), b"existing results")
+                    sentinel.unlink()
+                    output.rmdir()
 
 
 if __name__ == "__main__":

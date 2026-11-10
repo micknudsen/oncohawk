@@ -257,18 +257,38 @@ class AlignmentTests(unittest.TestCase):
                 self.assertIn("Analysis output selection must use --outdir", result.stdout)
                 self.assertNotIn("Submitted process", result.stdout)
                 self.assertFalse(destination.exists())
-        self.output.mkdir()
-        sentinel = self.output / "existing.txt"
-        sentinel.write_text("preserved")
         supplied = self.directory / "supplied-params.json"
-        supplied.write_text(json.dumps({"_oncohawk_output_state": {
-            "path": str(self.output), "existed": False,
-        }}))
+        supplied.write_text(json.dumps({"_oncohawk_output_path": str(self.output)}))
         result = self.align(arguments=["-params-file", str(supplied)])
         self.assertNotEqual(result.returncode, 0, result.stdout)
         self.assertIn("Invalid internal output-directory state", result.stdout)
         self.assertNotIn("Submitted process", result.stdout)
+        self.output.mkdir()
+        sentinel = self.output / "existing.txt"
+        sentinel.write_text("preserved")
+        result = self.align(arguments=["-params-file", str(supplied)], diagnostics=True)
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("Alignment output directory already exists", result.stdout)
+        self.assertNotIn("Submitted process", result.stdout)
         self.assertEqual(sentinel.read_text(), "preserved")
+
+    def test_preserves_preexisting_native_diagnostic_files(self):
+        self.reads([("pair", self.chr1[100:200], reverse_complement(self.chr1[300:400]))])
+        self.samples()
+        execution = self.output / "execution"
+        execution.mkdir(parents=True)
+        previous = {name: f"previous {name}".encode() for name in
+                    ("trace.tsv", "report.html", "timeline.html", "dag.html")}
+        for name, content in previous.items():
+            (execution / name).write_bytes(content)
+        result = self.align(diagnostics=True)
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("already exists", result.stdout)
+        self.assertNotIn("Submitted process", result.stdout)
+        self.assertEqual({path.relative_to(self.output).as_posix() for path in self.output.rglob("*")},
+                         {"execution", *[f"execution/{name}" for name in previous]})
+        for name, content in previous.items():
+            self.assertEqual((execution / name).read_bytes(), content)
 
     def test_explicit_and_default_oncohawk_match_with_cli_and_site_overrides(self):
         pairs = [("pair", self.chr1[100:200], reverse_complement(self.chr1[300:400]))]
