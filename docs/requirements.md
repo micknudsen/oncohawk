@@ -4,6 +4,10 @@ Fresh design session started 2026-11-01. This file records the restart brief and
 
 Q1–Q8 and the execution-environment clarification establish the agreed milestone scope. The [implementation plan](implementation-plan.md) proposes the build sequence and acceptance checks for review.
 
+The [public workflow architecture review](design.md#public-workflow-architecture-review--2026-11-10), confirmed on 2026-11-10, updates the required entrypoints and output organization below. At the design checkpoint, the migration was accepted but implementation had not been authorized or started. Later that day, the user authorized sequential implementation, PR creation, correction of CI failures, and merging after all CI tests pass. The existing pipeline directories remain the runnable interfaces until the dispatcher migration is completed.
+
+The implementation-ready architecture specification is [GitHub issue #25](https://github.com/micknudsen/oncohawk/issues/25).
+
 The synthesized milestone specification is published as [GitHub issue #1](https://github.com/micknudsen/oncohawk/issues/1).
 
 ## Scope
@@ -12,9 +16,13 @@ Oncohawk is a Nextflow workflow for tumor-only short-read DNA WGS analysis of bl
 
 ## Architecture
 
-- **Reference-bundle workflow:** prepares reusable reference assets and tool indexes with provenance.
-- **Knowledge-bundle workflow:** compiles human-authored biological/reporting knowledge against a reference bundle. Deferred beyond milestone 1.
-- **Report-generation workflow:** consumes sequencing data and bundles, maps reads, analyzes variants, and produces a report for expert review. Only its alignment portion is in milestone 1.
+- **`prepare_reference_bundle`:** prepares reusable reference assets and tool indexes with provenance.
+- **`prepare_knowledge_bundle`:** compiles human-authored biological/reporting knowledge against a reference bundle. Deferred beyond milestone 1; selecting it must immediately fail with a clear not-yet-implemented error until it exists.
+- **`oncohawk`:** consumes sequencing data and prepared bundles, maps reads, analyzes variants, and produces a report for expert review. Only its alignment portion is in milestone 1, requiring no knowledge bundle yet.
+
+A shared root `main.nf` selects exactly one workflow per invocation. `--workflow` selects among these three names; omission defaults to `oncohawk`. Bundle preparation is explicit and is not automatically chained into analysis. The root dispatcher replaces the standalone reference/alignment entrypoints without compatibility wrappers.
+
+Each workflow has its own implementation under `workflows/`. Root `nextflow.config` selects shared and workflow-specific settings from `conf/`, preserving process-selector isolation. Modules remain shared and upstream nf-core modules remain pristine. Reference source provenance includes relevant shared sources while excluding analysis-only sources.
 
 The intended later topology is mapping followed by parallel SNV/INDEL, SV, and CNA branches, then report generation. Each variant branch supports one or more callers, reconciles results into a consistent output for its class, and annotates that output. VEP is an example to consider; downstream callers, reconciliation, annotations, schemas, and report content remain open.
 
@@ -48,6 +56,8 @@ After optional adapter removal, require both mates to be at least 15 bp. Discard
 ### Alignment output
 
 Produce one coordinate-sorted, indexed BAM per sample, combining the sample's rows and preserving read groups. Mark duplicates per library: consider reads across lanes/read groups of the same library together, and keep distinct libraries separate for duplicate detection. Retain duplicate reads with their flags set. Accepted in [Q7](design.md#q7--alignment-deliverable).
+
+The confirmed architecture migration makes `results` the default analysis output root, overridable with `--outdir`. Publish `<sample>.bam` and `<sample>.bam.bai` under `results/samples/<sample>/alignments/`. Future sample-specific variants and reports belong within the same sample directory; any enabled run-wide diagnostics or summaries belong under `results/execution/`. This organization does not introduce new diagnostic generation or empty placeholder directories. Reference preparation retains its default `reference` destination.
 
 ## Execution environments
 

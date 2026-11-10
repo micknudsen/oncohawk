@@ -176,6 +176,58 @@ Keep cluster-specific settings (SLURM partition and account, Nextflow work direc
 
 Before the first official pipeline release, backward compatibility must never constrain changes. Every commit may break functionality, including existing commands, configuration, interfaces, and artifact formats. Do not add compatibility wrappers or migration machinery solely to preserve earlier pre-release behavior. Keep current documentation and tests consistent with the intended behavior; permission to break compatibility does not remove validation requirements. This policy applies to pre-release development generally, not only the pipeline-directory migration.
 
+## Public workflow architecture review — 2026-11-10
+
+**Status at the design checkpoint on 2026-11-10: accepted; final shared understanding confirmed, including sample-first output grouping and `results/execution/`. Implementation had not been authorized or started at that checkpoint.**
+
+The synthesized specification is published as [GitHub issue #25](https://github.com/micknudsen/oncohawk/issues/25), labeled `ready-for-agent`. It carries forward the accepted public workflow and configuration testing boundaries through the root dispatcher. Publication does not authorize implementation.
+
+On 2026-11-10, the specification was split into three sequential implementation issues: [#26 — shared dispatcher, configuration isolation, and reference provenance](https://github.com/micknudsen/oncohawk/issues/26), [#27 — sample-first analysis outputs](https://github.com/micknudsen/oncohawk/issues/27), and [#28 — enabled execution diagnostics](https://github.com/micknudsen/oncohawk/issues/28). Each includes its own tests and documentation and is intended for one focused PR, merged after required CI passes before the next issue starts. Issue #25 remains the parent acceptance specification. The first slice temporarily retains the existing analysis output layout; the second and third complete the accepted output organization. This sequence did not revise the final design or start implementation.
+
+Later on 2026-11-10, the user authorized implementing the open issues one at a time using the implement skill, creating a PR for each, fixing CI failures, and merging only after all CI tests pass. The user also authorized a separate PR for the existing documentation changes. This subsequent instruction authorizes the implementation sequence without changing the accepted design.
+
+The user reaffirmed the intended three-workflow structure and accepted the public names `prepare_reference_bundle`, `prepare_knowledge_bundle`, and `oncohawk`, selected through the shared root `main.nf`. The existing requirements already place alignment within the report-generation workflow and defer knowledge preparation beyond milestone 1. The current standalone alignment entrypoint implements that milestone portion; it does not establish a fourth conceptual workflow.
+
+This review revises the public entrypoint structure accepted on 2026-11-01. The reason for that earlier separation was isolation of workflow-specific process configuration. The earlier record contained no accepted shared-dispatcher decision; Q1–Q5 below establish the new design while preserving configuration isolation.
+
+### Q1 — Dispatch behavior
+
+**Status: accepted on 2026-11-10; design decision only.**
+
+The shared entrypoint selects exactly one of `prepare_reference_bundle`, `prepare_knowledge_bundle`, or `oncohawk` per invocation. Bundle preparation is invoked explicitly; `oncohawk` consumes prepared bundles. The dispatcher does not automatically chain preparation and analysis. This does not expand the current alignment milestone to require a knowledge bundle.
+
+### Q2 — Workflow selection syntax
+
+**Status: accepted on 2026-11-10; design decision only.**
+
+Use `--workflow` with the three accepted workflow names. Omitting it selects `oncohawk`; explicitly specifying `--workflow oncohawk` selects the same workflow. Bundle preparation requires `--workflow prepare_reference_bundle` or `--workflow prepare_knowledge_bundle`. The usual analysis invocation therefore does not need a workflow selector.
+
+### Q3 — Deferred knowledge preparation
+
+**Status: accepted on 2026-11-10; design decision only.**
+
+Until knowledge preparation is implemented, selecting `prepare_knowledge_bundle` must fail immediately with a clear not-yet-implemented error. Recognizing its name must not produce an empty bundle or silently run a different workflow.
+
+### Q4 — Analysis output layout
+
+**Status: revised sample-first layout accepted on 2026-11-10; design decision only.**
+
+Use `results` as the default `oncohawk` output directory; `--outdir` overrides that root. The initial choice to put all samples' BAMs and indexes under `results/alignments/` was reconsidered and superseded by the sample-first layout below.
+
+Group sample deliverables under `results/samples/<sample>/`, with artifact-type subdirectories such as `alignments/`. The current milestone publishes `<sample>.bam` and `<sample>.bam.bai` under `results/samples/<sample>/alignments/`, retaining sample IDs in filenames so copied files remain identifiable. Future variants and reports belong alongside those alignments within each sample directory. Keep any enabled run-wide diagnostics or summaries in a separate `results/execution/` namespace. The name `execution` was accepted in place of `run` on 2026-11-10. Sample-first grouping keeps one sample's deliverables together for inspection, transfer, and archiving. This output-organization decision does not authorize variant calling, reporting, new diagnostic generation, or empty placeholder directories. The current alignment-only scope and default reference-bundle destination are unchanged.
+
+### Q5 — Internal workflow layout
+
+**Status: accepted on 2026-11-10; design decision only.**
+
+Keep root `main.nf` responsible for workflow selection and top-level publication, with the three workflow implementations in `workflows/prepare_reference_bundle.nf`, `workflows/prepare_knowledge_bundle.nf`, and `workflows/oncohawk.nf`. The knowledge workflow is initially only the explicit not-yet-implemented failure. Root `nextflow.config` selects shared and workflow-specific settings from `conf/`; shared process modules remain under `modules/`.
+
+Preserve configuration isolation and reference-only provenance boundaries when changing the layout: selecting one workflow must not load process selectors belonging only to another, and changes to analysis-only sources must not affect the reference source-hash set. Input requirements remain specific to the selected workflow. These are existing constraints, not additional analysis scope.
+
+### Shared-understanding checkpoint
+
+The intended migration exposes only the root dispatcher, replacing the separate `pipelines/reference` and `pipelines/alignment` public entrypoints without compatibility wrappers, consistent with the accepted pre-release policy. Existing analysis remains alignment-only and needs a sample sheet and prepared reference bundle, with no knowledge-bundle requirement yet. Reference preparation keeps its current inputs and default `reference` output directory. Tests and operator documentation must follow the new entrypoint and analysis output layout while preserving workflow behavior, readable task tags, download reuse, and provenance boundaries. The user confirmed this combined design on 2026-11-10. At that checkpoint, the design interview was complete and implementation remained a separate task; the subsequent authorization is recorded above.
+
 ## Deferred
 
 Knowledge compilation, variant calling, variant reconciliation, annotation, reporting, and their resources remain outside this milestone.
