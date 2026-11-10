@@ -33,7 +33,7 @@ output {
         overwrite false
     }
     samples {
-        path '.'
+        path { meta, _bam, _bai -> "samples/${meta.sample}/alignments/" }
         mode 'copy'
         overwrite false
     }

@@ -63,7 +63,7 @@ Use the [pinned development runtimes](reference-bundle.md#runtime-pins) and a ru
 nextflow run . -profile docker,test \
   --input /path/to/samples.csv \
   --reference_bundle /path/to/prepared-bundle \
-  --outdir /path/to/new-alignments
+  --outdir /path/to/new-results
 ```
 
 `--reference_bundle` points to the directory containing `bundle.json`, `reference.fa`, and its bwa-mem2 indexes. `--outdir` must be a fresh output directory. The Docker profile selects `linux/amd64` containers, including on Apple Silicon; the test profile limits local execution to two CPUs and 4 GiB total task memory. Use compact references locally and full-human-reference inputs on the production cluster.
@@ -80,17 +80,24 @@ Coordinate-sorted row BAMs are grouped by sample and passed to samtools merge in
 
 ## Outputs and failures
 
-The default output directory is `alignments`; use `--outdir` to choose a different fresh destination. This flat layout is retained during dispatcher issue [#26](https://github.com/micknudsen/oncohawk/issues/26). The accepted switch to `results/samples/<sample>/alignments/` belongs to [#27](https://github.com/micknudsen/oncohawk/issues/27); execution-diagnostic placement belongs to [#28](https://github.com/micknudsen/oncohawk/issues/28).
+The default output root is `results`; use `--outdir` to choose a different fresh destination. Relative overrides resolve from the launch directory. Each sample's BAM and index are grouped under `samples/<sample>/alignments/`, retaining the sample ID in both filenames. An override changes only the root; it does not change the sample hierarchy. Existing output roots are rejected before processing, preserving previous results.
 
 For the two samples in the example, successful completion publishes exactly one BAM and index per sample:
 
 ```text
-new-alignments/
-├── S1.bam
-├── S1.bam.bai
-├── S2.bam
-└── S2.bam.bai
+results/
+└── samples/
+    ├── S1/
+    │   └── alignments/
+    │       ├── S1.bam
+    │       └── S1.bam.bai
+    └── S2/
+        └── alignments/
+            ├── S2.bam
+            └── S2.bam.bai
 ```
+
+For example, `--outdir /path/to/new-results` places S1's BAM at `/path/to/new-results/samples/S1/alignments/S1.bam`. No flat duplicate BAMs or empty variant/report directories are published. Execution diagnostics remain opt-in; their placement under `results/execution/` belongs to [#28](https://github.com/micknudsen/oncohawk/issues/28).
 
 Each BAM is coordinate-sorted, contains only that sample's records, preserves its read-group headers and read tags, and retains duplicate reads with duplicate flags set. The final index supports regional BAM queries.
 
@@ -112,7 +119,7 @@ cp conf/oncohawk_resources.config .local/alignment-resources.config
 nextflow run . -profile slurm -c .local/site.config,.local/alignment-resources.config \
   --input /shared/PROJECT/samples.csv \
   --reference_bundle /shared/PROJECT/bundles/grch38-no-alt \
-  --outdir /shared/PROJECT/alignments/run-001
+  --outdir /shared/PROJECT/results/run-001
 ```
 
 SLURM/Apptainer and Docker use the same workflow logic and pristine nf-core modules. Conda execution is unsupported. HPC checks are informal operator checks; HPC access, execution evidence, and sign-off never gate ticket or milestone completion. No production-cluster execution or full-reference resource measurement is claimed here.

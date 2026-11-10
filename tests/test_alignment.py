@@ -77,11 +77,12 @@ class AlignmentTests(unittest.TestCase):
             writer.writeheader()
             writer.writerows(rows)
 
-    def align(self, launch_directory=None, default_output=False, workflow=None, config=None):
+    def align(self, launch_directory=None, default_output=False, workflow=None, config=None, trace=True):
         self.run_count += 1
         result = subprocess.run([
             os.environ.get("NEXTFLOW", "nextflow"), "run", str(PROJECT),
-            "-profile", "docker,test", "-with-trace", str(self.directory / f"trace-{self.run_count}.tsv"),
+            "-profile", "docker,test",
+            *(["-with-trace", str(self.directory / f"trace-{self.run_count}.tsv")] if trace else []),
             "--reference_bundle", str(self.bundle), "--input", str(self.sheet),
             *(["--outdir", str(self.output)] if not default_output else []),
             *(["--workflow", workflow] if workflow else []),
@@ -98,8 +99,19 @@ class AlignmentTests(unittest.TestCase):
             "-v", f"{self.output}:/data:ro", SAMTOOLS, "samtools", *arguments,
         ], text=True)
 
+    def assert_sample_tree(self, samples):
+        expected = ["samples"]
+        for sample in samples:
+            expected.extend([
+                f"samples/{sample}", f"samples/{sample}/alignments",
+                f"samples/{sample}/alignments/{sample}.bam",
+                f"samples/{sample}/alignments/{sample}.bam.bai",
+            ])
+        self.assertEqual(sorted(str(path.relative_to(self.output)) for path in self.output.rglob("*")),
+                         sorted(expected))
+
     def assert_bam_pairs(self, expected, sample="S1"):
-        records = [line.split("\t") for line in self.samtools("view", f"/data/{sample}.bam").splitlines()]
+        records = [line.split("\t") for line in self.samtools("view", f"/data/samples/{sample}/alignments/{sample}.bam").splitlines()]
         self.assertEqual(len(records), len(expected) * 2)
         observed = {}
         for record in records:
@@ -118,10 +130,10 @@ class AlignmentTests(unittest.TestCase):
         self.samples()
         result = self.align(launch_directory=PROJECT)
         self.assertEqual(result.returncode, 0, result.stdout)
-        records = [line.split("\t") for line in self.samtools("view", "/data/S1.bam").splitlines()]
+        records = [line.split("\t") for line in self.samtools("view", "/data/samples/S1/alignments/S1.bam").splitlines()]
         self.assertEqual([(r[0], r[2], int(r[3])) for r in records],
                          [("known", "chr1", 101), ("known", "chr1", 301)])
-        header = self.samtools("view", "-H", "/data/S1.bam")
+        header = self.samtools("view", "-H", "/data/samples/S1/alignments/S1.bam")
         self.assertIn("SO:coordinate", header)
         group = next(line for line in header.splitlines() if line.startswith("@RG\t"))
         self.assertIn("\tSM:S1", group)
@@ -129,17 +141,24 @@ class AlignmentTests(unittest.TestCase):
         self.assertIn("\tPU:FC1.1", group)
         identifier = next(field[3:] for field in group.split("\t") if field.startswith("ID:"))
         self.assertTrue(all(f"RG:Z:{identifier}" in record for record in records))
-        self.assertEqual(len(self.samtools("view", "/data/S1.bam", "chr1:101-150").splitlines()), 1)
+        self.assertEqual(len(self.samtools("view", "/data/samples/S1/alignments/S1.bam", "chr1:101-150").splitlines()), 1)
 
-    def test_defaults_to_alignments_in_launch_directory(self):
+    def test_defaults_to_sample_outputs_under_results_in_launch_directory(self):
         self.reads([("pair", self.chr1[100:200], reverse_complement(self.chr1[300:400]))])
         self.samples()
-        result = self.align(default_output=True)
+        result = self.align(default_output=True, trace=False)
         self.assertEqual(result.returncode, 0, result.stdout)
-        self.output = self.directory / "alignments"
-        self.assertTrue((self.output / "S1.bam").is_file())
-        self.assertTrue((self.output / "S1.bam.bai").is_file())
+        self.assertEqual(sorted(str(path.relative_to(self.output)) for path in self.output.rglob("*")), [
+            "samples", "samples/S1", "samples/S1/alignments",
+            "samples/S1/alignments/S1.bam", "samples/S1/alignments/S1.bam.bai",
+        ])
         self.assert_bam_pairs([("pair", self.chr1[100:200], reverse_complement(self.chr1[300:400]))])
+        self.assertEqual(len(self.samtools("view", "/data/samples/S1/alignments/S1.bam",
+                                          "chr1:101-150").splitlines()), 1)
+        self.assertFalse((self.directory / "alignments").exists())
+        self.assertEqual(list(self.directory.glob("trace-*.tsv")), [])
+        self.assertEqual(list(self.directory.glob("report*.html")), [])
+        self.assertEqual(list(self.directory.glob("timeline*.html")), [])
 
     def test_explicit_and_default_oncohawk_match_with_cli_and_site_overrides(self):
         pairs = [("pair", self.chr1[100:200], reverse_complement(self.chr1[300:400]))]
@@ -157,8 +176,9 @@ class AlignmentTests(unittest.TestCase):
             result = self.align(workflow=selected, config=site)
             self.assertEqual(result.returncode, 0, result.stdout)
             self.assert_bam_pairs(pairs)
-            observed.append((self.samtools("view", "/data/S1.bam"),
-                             self.samtools("idxstats", "/data/S1.bam")))
+            self.assert_sample_tree(["S1"])
+            observed.append((self.samtools("view", "/data/samples/S1/alignments/S1.bam"),
+                             self.samtools("idxstats", "/data/samples/S1/alignments/S1.bam")))
             with (self.directory / f"trace-{self.run_count}.tsv").open() as handle:
                 trace = list(csv.DictReader(handle, delimiter="\t"))
             self.assertTrue(trace)
@@ -186,7 +206,7 @@ class AlignmentTests(unittest.TestCase):
                            "  maxForks = 2\n"
                            "  beforeScript = { meta.sample == 'S2' ? \""
                            "for attempt in {1..60}; do "
-                           f"if test -s '{self.output}/S1.bam.bai'; then exit 17; fi; "
+                           f"if test -s '{self.output}/samples/S1/alignments/S1.bam.bai'; then exit 17; fi; "
                            "sleep 1; done; exit 18\" : '' }\n"
                            "} }\n")
         result = self.align(config=failure)
@@ -194,17 +214,20 @@ class AlignmentTests(unittest.TestCase):
         self.assertIn("Error executing process > 'ONCOHAWK:SAMTOOLS_INDEX (S2)'", result.stdout)
         self.assertIn("17", result.stdout)
         self.assert_bam_pairs(pairs, sample="S1")
-        self.assertTrue((self.output / "S1.bam.bai").is_file())
-        self.assertFalse((self.output / "S2.bam").exists())
-        self.assertFalse((self.output / "S2.bam.bai").exists())
+        self.assertEqual(len(self.samtools("view", "/data/samples/S1/alignments/S1.bam",
+                                          "chr1:101-150").splitlines()), 1)
+        self.assert_sample_tree(["S1"])
+        self.assertTrue((self.output / "samples/S1/alignments/S1.bam.bai").is_file())
+        self.assertFalse((self.output / "samples/S2/alignments/S2.bam").exists())
+        self.assertFalse((self.output / "samples/S2/alignments/S2.bam.bai").exists())
 
     def test_valid_sample_name_cannot_collide_with_internal_mapped_bam(self):
         self.reads([("known", self.chr1[100:200], reverse_complement(self.chr1[300:400]))])
         self.samples(sample="input1.mapped")
         result = self.align()
         self.assertEqual(result.returncode, 0, result.stdout)
-        self.assertEqual(self.samtools("view", "-c", "/data/input1.mapped.bam").strip(), "2")
-        self.assertIn("\tSM:input1.mapped", self.samtools("view", "-H", "/data/input1.mapped.bam"))
+        self.assertEqual(self.samtools("view", "-c", "/data/samples/input1.mapped/alignments/input1.mapped.bam").strip(), "2")
+        self.assertIn("\tSM:input1.mapped", self.samtools("view", "-H", "/data/samples/input1.mapped/alignments/input1.mapped.bam"))
 
     def test_already_trimmed_input_names_are_preserved(self):
         self.r1 = self.directory / "input1_1.trim.fastq.gz"
@@ -215,7 +238,7 @@ class AlignmentTests(unittest.TestCase):
         result = self.align()
         self.assertEqual([hashlib.sha256(path.read_bytes()).hexdigest() for path in [self.r1, self.r2]], expected)
         self.assertEqual(result.returncode, 0, result.stdout)
-        self.assertEqual(self.samtools("view", "-c", "/data/S1.bam").strip(), "2")
+        self.assertEqual(self.samtools("view", "-c", "/data/samples/S1/alignments/S1.bam").strip(), "2")
 
     def test_internal_output_prefix_is_rejected_for_source_basenames(self):
         self.r1 = self.directory / "_input1_1.trim.fastq.gz"
@@ -227,7 +250,7 @@ class AlignmentTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0, result.stdout)
         self.assertIn("safe basename", result.stdout)
         self.assertEqual([hashlib.sha256(path.read_bytes()).hexdigest() for path in [self.r1, self.r2]], expected)
-        self.assertFalse((self.output / "S1.bam").exists())
+        self.assertFalse((self.output / "samples/S1/alignments/S1.bam").exists())
 
     def test_filters_whole_pairs_at_the_14_15_base_boundary(self):
         first = self.chr1[100:200]
@@ -246,7 +269,7 @@ class AlignmentTests(unittest.TestCase):
         self.samples()
         result = self.align()
         self.assertEqual(result.returncode, 0, result.stdout)
-        records = [line.split("\t") for line in self.samtools("view", "/data/S1.bam").splitlines()]
+        records = [line.split("\t") for line in self.samtools("view", "/data/samples/S1/alignments/S1.bam").splitlines()]
         self.assertEqual(sorted(record[0] for record in records),
                          ["exactly15", "exactly15", "untrimmed", "untrimmed"])
         for record in records:
@@ -266,7 +289,7 @@ class AlignmentTests(unittest.TestCase):
         self.samples()
         result = self.align()
         self.assertEqual(result.returncode, 0, result.stdout)
-        records = [line.split("\t") for line in self.samtools("view", "/data/S1.bam").splitlines()]
+        records = [line.split("\t") for line in self.samtools("view", "/data/samples/S1/alignments/S1.bam").splitlines()]
         self.assertEqual(len(records), 4)
         duplicate_names = [record[0] for record in records if int(record[1]) & 1024]
         self.assertEqual(len(duplicate_names), 2)
@@ -274,6 +297,7 @@ class AlignmentTests(unittest.TestCase):
         self.assertEqual([int(record[3]) for record in records], [501, 501, 801, 801])
 
     def test_combines_lanes_by_sample_with_library_aware_duplicates(self):
+        self.output = self.directory / "custom-results"
         first = self.chr1[500:600]
         second = reverse_complement(self.chr1[800:900])
         inputs = [
@@ -296,17 +320,16 @@ class AlignmentTests(unittest.TestCase):
         self.sample_rows(rows)
         result = self.align()
         self.assertEqual(result.returncode, 0, result.stdout)
-        self.assertEqual(sorted(path.name for path in self.output.iterdir()),
-                         ["S1.bam", "S1.bam.bai", "S2.bam", "S2.bam.bai"])
+        self.assert_sample_tree(["S1", "S2"])
         self.assertEqual({path: hashlib.sha256(path.read_bytes()).hexdigest() for path in sources}, sources)
         for sample, names in [("S1", {"lane1", "lane2", "library2"}), ("S2", {"sample2"})]:
             with self.subTest(sample=sample):
-                header = self.samtools("view", "-H", f"/data/{sample}.bam")
+                header = self.samtools("view", "-H", f"/data/samples/{sample}/alignments/{sample}.bam")
                 self.assertIn("SO:coordinate", header)
                 groups = read_groups(header)
                 self.assertEqual(len(groups), len(names))
                 by_id = {group["ID"]: group for group in groups}
-                records = [line.split("\t") for line in self.samtools("view", f"/data/{sample}.bam").splitlines()]
+                records = [line.split("\t") for line in self.samtools("view", f"/data/samples/{sample}/alignments/{sample}.bam").splitlines()]
                 self.assertEqual(len(records), 2 * len(names))
                 self.assertEqual({record[0] for record in records}, names)
                 self.assertEqual([int(record[3]) for record in records],
@@ -324,7 +347,7 @@ class AlignmentTests(unittest.TestCase):
                 if duplicates:
                     self.assertEqual(len(set(duplicates)), 1)
                     self.assertIn(duplicates[0], {"lane1", "lane2"})
-                self.assertEqual(len(self.samtools("view", f"/data/{sample}.bam", "chr1:501-550").splitlines()),
+                self.assertEqual(len(self.samtools("view", f"/data/samples/{sample}/alignments/{sample}.bam", "chr1:501-550").splitlines()),
                                  len(names))
 
     def test_adapter_settings_apply_only_to_the_selected_mates(self):
@@ -376,12 +399,12 @@ class AlignmentTests(unittest.TestCase):
                 self.assertEqual(sum(label_text.startswith("S1 / L1 / FC.1 / 2 / ")
                                      for label_text in labels[process]), 2)
             self.assertEqual(set(labels["CUTADAPT"]), set(labels["BWAMEM2_MEM"]))
-            header = self.samtools("view", "-H", "/data/S1.bam")
+            header = self.samtools("view", "-H", "/data/samples/S1/alignments/S1.bam")
             groups = read_groups(header)
             self.assertEqual(len(groups), 2)
             self.assertEqual({group["PU"] for group in groups}, {"FC%2E1.2", "FC.1%2E2"})
             by_id = {group["ID"]: group for group in groups}
-            records = [line.split("\t") for line in self.samtools("view", "/data/S1.bam").splitlines()]
+            records = [line.split("\t") for line in self.samtools("view", "/data/samples/S1/alignments/S1.bam").splitlines()]
             self.assertEqual(len(records), 6)
             self.assertEqual(sum(bool(int(record[1]) & 1024) for record in records), 4)
             identities = {}
@@ -426,25 +449,24 @@ class AlignmentTests(unittest.TestCase):
             sources.update({path: hashlib.sha256(path.read_bytes()).hexdigest()
                             for path in [self.r1, self.r2]})
         self.sample_rows(rows)
-        result = self.align()
+        result = self.align(default_output=True)
         self.assertEqual(result.returncode, 0, result.stdout)
-        self.assertEqual(sorted(path.name for path in self.output.iterdir()),
-                         ["S1.bam", "S1.bam.bai", "S2.bam", "S2.bam.bai"])
+        self.assert_sample_tree(["S1", "S2"])
         self.assertEqual({path: hashlib.sha256(path.read_bytes()).hexdigest() for path in sources}, sources)
         for sample in ["S1", "S2"]:
             expected = [(name, expected_first, expected_second)
                         for name, owner, _, _, expected_first, expected_second in inputs if owner == sample]
             self.assert_bam_pairs(expected, sample)
-            groups = read_groups(self.samtools("view", "-H", f"/data/{sample}.bam"))
+            groups = read_groups(self.samtools("view", "-H", f"/data/samples/{sample}/alignments/{sample}.bam"))
             self.assertEqual(len(groups), 2)
             by_id = {group["ID"]: group for group in groups}
-            records = [line.split("\t") for line in self.samtools("view", f"/data/{sample}.bam").splitlines()]
+            records = [line.split("\t") for line in self.samtools("view", f"/data/samples/{sample}/alignments/{sample}.bam").splitlines()]
             for record in records:
                 identifier = next(field[5:] for field in record[11:] if field.startswith("RG:Z:"))
                 group = by_id[identifier]
                 expected_lane = next(lane for name, _, lane, _, _, _ in inputs if name == record[0])
                 self.assertEqual((group["SM"], group["LB"], group["PU"]), (sample, "L1", f"FC1.{expected_lane}"))
-            self.assertEqual(len(self.samtools("view", f"/data/{sample}.bam", "chr1:101-150").splitlines()), 2)
+            self.assertEqual(len(self.samtools("view", f"/data/samples/{sample}/alignments/{sample}.bam", "chr1:101-150").splitlines()), 2)
 
     def test_rejects_invalid_later_rows_before_processing_valid_rows(self):
         self.reads([("known", self.chr1[100:200], reverse_complement(self.chr1[300:400]))])
@@ -496,7 +518,7 @@ class AlignmentTests(unittest.TestCase):
         self.samples(options=f"r1_adapter={adapter}")
         result = self.align()
         self.assertEqual(result.returncode, 0, result.stdout)
-        records = [line.split("\t") for line in self.samtools("view", "/data/S1.bam").splitlines()]
+        records = [line.split("\t") for line in self.samtools("view", "/data/samples/S1/alignments/S1.bam").splitlines()]
         first_mate = [record for record in records if int(record[1]) & 64]
         self.assertEqual({(record[2], int(record[3])) for record in first_mate},
                          {("chr1", 1001), ("chr2", 2001)})
@@ -518,9 +540,9 @@ class AlignmentTests(unittest.TestCase):
                 self.samples(**settings)
                 result = self.align()
                 self.assertEqual(result.returncode, 0, result.stdout)
-                self.assertEqual(self.samtools("view", "-c", "/data/S1.bam").strip(), "0")
-                self.assertEqual(self.samtools("view", "/data/S1.bam", "chr1:1-6000"), "")
-                self.assertIn("\tSM:S1", self.samtools("view", "-H", "/data/S1.bam"))
+                self.assertEqual(self.samtools("view", "-c", "/data/samples/S1/alignments/S1.bam").strip(), "0")
+                self.assertEqual(self.samtools("view", "/data/samples/S1/alignments/S1.bam", "chr1:1-6000"), "")
+                self.assertIn("\tSM:S1", self.samtools("view", "-H", "/data/samples/S1/alignments/S1.bam"))
 
     def test_rejects_repeated_fastq_pairs(self):
         self.reads([("known", self.chr1[100:200], reverse_complement(self.chr1[300:400]))])
@@ -530,7 +552,7 @@ class AlignmentTests(unittest.TestCase):
         result = self.align()
         self.assertNotEqual(result.returncode, 0, result.stdout)
         self.assertIn("Sample-sheet row 3: FASTQ file already used in row 2", result.stdout)
-        self.assertFalse((self.output / "S1.bam").exists())
+        self.assertFalse((self.output / "samples/S1/alignments/S1.bam").exists())
 
     def test_rejects_sample_names_that_collide_ignoring_case(self):
         rows = []
@@ -576,7 +598,7 @@ class AlignmentTests(unittest.TestCase):
                 result = self.align()
                 self.assertNotEqual(result.returncode, 0, result.stdout)
                 self.assertIn(f"Sample-sheet row 2: {expected}", result.stdout)
-                self.assertFalse((self.output / "S1.bam").exists())
+                self.assertFalse((self.output / "samples/S1/alignments/S1.bam").exists())
 
     def test_rejects_ambiguous_csv_headers(self):
         self.reads([("known", self.chr1[100:200], reverse_complement(self.chr1[300:400]))])
@@ -593,7 +615,7 @@ class AlignmentTests(unittest.TestCase):
                 result = self.align()
                 self.assertNotEqual(result.returncode, 0, result.stdout)
                 self.assertIn(expected, result.stdout)
-                self.assertFalse((self.output / "S1.bam").exists())
+                self.assertFalse((self.output / "samples/S1/alignments/S1.bam").exists())
 
     def test_accepts_blank_options_and_paths_relative_to_quoted_sheet_location(self):
         reads = self.directory / "reads, folder"
@@ -607,11 +629,13 @@ class AlignmentTests(unittest.TestCase):
         self.reads(pairs)
         for label, options in [("empty", ""), ("whitespace", " ")]:
             with self.subTest(options=label):
-                self.output = self.directory / label
+                self.output = Path("relative results") / label
                 self.samples(fastq_1="../reads, folder/R1.fastq.gz",
                              fastq_2="../reads, folder/R2.fastq.gz", options=options)
                 result = self.align()
+                self.output = self.directory / self.output
                 self.assertEqual(result.returncode, 0, result.stdout)
+                self.assert_sample_tree(["S1"])
                 self.assert_bam_pairs(pairs)
 
     def test_rejects_malformed_unknown_repeated_or_nonsequence_options(self):
@@ -635,7 +659,7 @@ class AlignmentTests(unittest.TestCase):
                 result = self.align()
                 self.assertNotEqual(result.returncode, 0, result.stdout)
                 self.assertIn(f"Sample-sheet row 2: {expected}", result.stdout)
-                self.assertFalse((self.output / "S1.bam").exists())
+                self.assertFalse((self.output / "samples/S1/alignments/S1.bam").exists())
 
     def test_rejects_unusable_fastq_paths_and_propagates_tool_failure(self):
         self.reads([("known", self.chr1[100:200], reverse_complement(self.chr1[300:400]))])
@@ -648,15 +672,15 @@ class AlignmentTests(unittest.TestCase):
                 result = self.align()
                 self.assertNotEqual(result.returncode, 0, result.stdout)
                 self.assertIn(expected, result.stdout)
-                self.assertFalse((self.output / "S1.bam").exists())
+                self.assertFalse((self.output / "samples/S1/alignments/S1.bam").exists())
         self.samples()
         with gzip.open(self.r2, "wt") as handle:
             handle.write("@different_name/2\nACGTACGTACGTACGT\n+\nIIIIIIIIIIIIIIII\n")
         result = self.align()
         self.assertNotEqual(result.returncode, 0, result.stdout)
         self.assertIn("Error executing process > 'ONCOHAWK:CUTADAPT", result.stdout)
-        self.assertFalse((self.output / "S1.bam").exists())
-        self.assertFalse((self.output / "S1.bam.bai").exists())
+        self.assertFalse((self.output / "samples/S1/alignments/S1.bam").exists())
+        self.assertFalse((self.output / "samples/S1/alignments/S1.bam.bai").exists())
 
     def test_rejects_unsupported_or_corrupt_reference_bundle(self):
         self.reads([("known", self.chr1[100:200], reverse_complement(self.chr1[300:400]))])
@@ -669,7 +693,7 @@ class AlignmentTests(unittest.TestCase):
         result = self.align()
         self.assertNotEqual(result.returncode, 0, result.stdout)
         self.assertIn("Unsupported reference-bundle bundle_format_version", result.stdout)
-        self.assertFalse((self.output / "S1.bam").exists())
+        self.assertFalse((self.output / "samples/S1/alignments/S1.bam").exists())
         manifest["bundle_format_version"] = 1
         manifest_path.write_text(json.dumps(manifest))
         with (self.bundle / "reference.fa").open("a") as handle:
@@ -677,19 +701,19 @@ class AlignmentTests(unittest.TestCase):
         result = self.align()
         self.assertNotEqual(result.returncode, 0, result.stdout)
         self.assertIn("Reference-bundle checksum mismatch: reference.fa", result.stdout)
-        self.assertFalse((self.output / "S1.bam").exists())
+        self.assertFalse((self.output / "samples/S1/alignments/S1.bam").exists())
 
     def test_preserves_existing_output_directory(self):
         self.reads([("known", self.chr1[100:200], reverse_complement(self.chr1[300:400]))])
         self.samples()
-        self.output.mkdir()
-        sentinel = self.output / "S1.bam"
+        sentinel = self.output / "samples/S1/alignments/S1.bam"
+        sentinel.parent.mkdir(parents=True)
         sentinel.write_text("existing data")
         result = self.align()
         self.assertNotEqual(result.returncode, 0, result.stdout)
         self.assertIn("Alignment output directory already exists", result.stdout)
         self.assertEqual(sentinel.read_text(), "existing data")
-        self.assertFalse((self.output / "S1.bam.bai").exists())
+        self.assertFalse((self.output / "samples/S1/alignments/S1.bam.bai").exists())
 
 
 if __name__ == "__main__":

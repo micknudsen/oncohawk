@@ -52,7 +52,7 @@ class PipelineConfigurationTests(unittest.TestCase):
                             self.assertNotIn(f"withName:{process}", result.stdout)
                         self.assertIn(f"params.workflow = '{selected}'", result.stdout)
                         if selected != "prepare_knowledge_bundle":
-                            expected = "reference" if selected == "prepare_reference_bundle" else "alignments"
+                            expected = "reference" if selected == "prepare_reference_bundle" else "results"
                             self.assertIn(f"params.outdir = '{expected}'", result.stdout)
                         if profile == "slurm":
                             self.assertIn("process.executor = 'slurm'", result.stdout)
