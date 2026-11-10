@@ -132,6 +132,7 @@ class ReferencePreparationTests(unittest.TestCase):
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=environment)
         (self.directory / f"workflow-{run_number}.log").write_text(result.stdout)
         self.assertNotIn("There's no process matching config selector", result.stdout)
+        self.assertNotIn("WARN: Unrecognized config option", result.stdout)
         self.assertNotRegex(result.stdout,
                             r"WARN: Environment variable `(?:http|https|no)_proxy` evaluates to an empty value|"
                             r"WARN: Environment variable `(?:HTTP|HTTPS|NO)_PROXY` evaluates to an empty value")
@@ -578,8 +579,10 @@ class ReferencePreparationTests(unittest.TestCase):
             for name in changed:
                 with (snapshot / name).open("a") as handle:
                     handle.write("\n# Downstream code revision\n" if name.endswith(".py") else
-                                 "\nprocess.withName.BEDTOOLS_MASKFASTA.ext.args = ''\n"
-                                 "process.withName.BWAMEM2_INDEX.ext.args = ''\n")
+                                 "\nprocess {\n"
+                                 "    withName: BEDTOOLS_MASKFASTA { ext.args = '' }\n"
+                                 "    withName: BWAMEM2_INDEX { ext.args = '' }\n"
+                                 "}\n")
             result = self.prepare("--downloads_dir", "stored sources",
                                   "--outdir", str(self.directory / "revised"), project=snapshot)
             self.assertEqual(result.returncode, 0, result.stdout)

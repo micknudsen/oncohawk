@@ -89,6 +89,7 @@ class AlignmentTests(unittest.TestCase):
         ], cwd=launch_directory or self.directory, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         (self.directory / f"alignment-{self.run_count}.log").write_text(result.stdout)
         self.assertNotIn("There's no process matching config selector", result.stdout)
+        self.assertNotIn("WARN: Unrecognized config option", result.stdout)
         return result
 
     def samtools(self, *arguments):
@@ -145,8 +146,10 @@ class AlignmentTests(unittest.TestCase):
         self.reads(pairs)
         self.samples()
         site = self.directory / "site.config"
-        site.write_text("process.withName.BWAMEM2_MEM.cpus = 2\n"
-                        "process.withName.BWAMEM2_MEM.memory = '1 GB'\n"
+        site.write_text("process { withName: BWAMEM2_MEM {\n"
+                        "  cpus = 2\n"
+                        "  memory = '1 GB'\n"
+                        "} }\n"
                         "trace.fields = 'task_id,name,cpus,memory'\n")
         observed = []
         for selected, destination in [(None, "default"), ("oncohawk", "explicit")]:
