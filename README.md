@@ -18,7 +18,7 @@ Launch the repository root with `nextflow run .`. Each invocation selects one wo
 
 | Selection | Behavior | Default output directory |
 | --- | --- | --- |
-| Omit `--workflow`, or use `--workflow oncohawk` | Align the sample sheet against an existing reference bundle. | `alignments` |
+| Omit `--workflow`, or use `--workflow oncohawk` | Align the sample sheet against an existing reference bundle. | `results` |
 | `--workflow prepare_reference_bundle` | Prepare a reusable reference bundle explicitly. | `reference` |
 | `--workflow prepare_knowledge_bundle` | Fail immediately with a not-yet-implemented error. | None |
 
@@ -26,7 +26,7 @@ Unknown workflow names fail before tasks start. Analysis requires no knowledge b
 
 Root `main.nf` owns selection and publication; implementations live in `workflows/`. Root `nextflow.config` loads shared and selected-workflow settings from `conf/`, preserving process-selector isolation. Modules remain shared. The former `pipelines/reference` and `pipelines/alignment` entrypoints are removed.
 
-This dispatcher migration ([#26](https://github.com/micknudsen/oncohawk/issues/26)) temporarily retains flat analysis BAM/index publication under `alignments`. The accepted sample-first `results/samples/<sample>/alignments/` layout and `results/execution/` diagnostic placement follow in [#27](https://github.com/micknudsen/oncohawk/issues/27) and [#28](https://github.com/micknudsen/oncohawk/issues/28).
+Analysis publishes `<sample>.bam` and `<sample>.bam.bai` under `results/samples/<sample>/alignments/`. An `--outdir` override replaces only `results`, retaining that sample layout and the filenames. No variant/report placeholders or diagnostics are created by this layout. Placement of explicitly enabled diagnostics under `results/execution/` follows in [#28](https://github.com/micknudsen/oncohawk/issues/28).
 
 Reference URLs use a persistent, integrity-checked download store, defaulting to `downloads` in the launch directory. Set `--downloads_dir /persistent/path` to share it across runs independently of Nextflow work directories and `-resume`. See [persistent downloads](docs/reference-bundle.md#persistent-downloads) for integrity, concurrency, and cluster setup.
 
@@ -47,7 +47,7 @@ Align small paired-end fixtures against that prepared bundle:
 nextflow run . -profile docker,test \
   --input /path/to/samples.csv \
   --reference_bundle /path/to/new-bundle \
-  --outdir /path/to/new-alignments
+  --outdir /path/to/new-results
 ```
 
 Use the [sample-sheet examples](docs/alignment.md#sample-sheet) for one pair or multiple samples and a fresh output directory. All pairs pass through Cutadapt; after optional row-local adapter removal, both mates must be at least 15 bp. Each input FASTQ may appear only once in the sheet.
