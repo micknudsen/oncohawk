@@ -55,7 +55,7 @@ The results selected uppercase values in the first case, lowercase in the second
 
 ## Consequence for Oncohawk
 
-At the investigated commit, [`pipelines/reference/main.nf`](../../pipelines/reference/main.nf) read only `http_proxy` and `https_proxy`, replacing missing values with empty strings. [`modules/local/reference_download.nf`](../../modules/local/reference_download.nf) exported those two lowercase inputs. [`bin/download_reference.py`](../../bin/download_reference.py) uses `urllib.request.urlopen`.
+At the investigated commit, [`pipelines/reference/main.nf`](https://github.com/micknudsen/oncohawk/blob/dff29e0785d7df6cfd51714aa6684fb7ef54a731/pipelines/reference/main.nf) read only `http_proxy` and `https_proxy`, replacing missing values with empty strings. [`modules/local/reference_download.nf`](https://github.com/micknudsen/oncohawk/blob/dff29e0785d7df6cfd51714aa6684fb7ef54a731/modules/local/reference_download.nf) exported those two lowercase inputs. [`bin/download_reference.py`](https://github.com/micknudsen/oncohawk/blob/dff29e0785d7df6cfd51714aa6684fb7ef54a731/bin/download_reference.py) uses `urllib.request.urlopen`.
 
 Consequently, that implementation did not support a launch environment containing only uppercase proxy variables through explicit job forwarding, despite Python supporting those variables. Even if uppercase values otherwise reached the container, synthesized lowercase empty values suppressed them. Adding uppercase inputs without addressing those empty lowercase exports would not fix this reliably.
 

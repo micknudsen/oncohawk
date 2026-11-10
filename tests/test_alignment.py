@@ -42,7 +42,7 @@ class AlignmentTests(unittest.TestCase):
         bed.write_text("chr1\t4000\t4010\n")
         cls.bundle = cls.reference_directory / "bundle"
         result = subprocess.run([
-            os.environ.get("NEXTFLOW", "nextflow"), "run", str(PROJECT / "pipelines/reference"),
+            os.environ.get("NEXTFLOW", "nextflow"), "run", str(PROJECT), "--workflow", "prepare_reference_bundle",
             "-profile", "docker,test", "--fasta", str(fasta), "--exclusions_bed", str(bed),
             "--outdir", str(cls.bundle),
         ], cwd=cls.reference_directory, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -77,13 +77,15 @@ class AlignmentTests(unittest.TestCase):
             writer.writeheader()
             writer.writerows(rows)
 
-    def align(self, launch_directory=None, default_output=False):
+    def align(self, launch_directory=None, default_output=False, workflow=None, config=None):
         self.run_count += 1
         result = subprocess.run([
-            os.environ.get("NEXTFLOW", "nextflow"), "run", str(PROJECT / "pipelines/alignment"),
+            os.environ.get("NEXTFLOW", "nextflow"), "run", str(PROJECT),
             "-profile", "docker,test", "-with-trace", str(self.directory / f"trace-{self.run_count}.tsv"),
             "--reference_bundle", str(self.bundle), "--input", str(self.sheet),
             *(["--outdir", str(self.output)] if not default_output else []),
+            *(["--workflow", workflow] if workflow else []),
+            *(["-c", str(config)] if config else []),
         ], cwd=launch_directory or self.directory, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         (self.directory / f"alignment-{self.run_count}.log").write_text(result.stdout)
         self.assertNotIn("There's no process matching config selector", result.stdout)
@@ -137,6 +139,61 @@ class AlignmentTests(unittest.TestCase):
         self.assertTrue((self.output / "S1.bam").is_file())
         self.assertTrue((self.output / "S1.bam.bai").is_file())
         self.assert_bam_pairs([("pair", self.chr1[100:200], reverse_complement(self.chr1[300:400]))])
+
+    def test_explicit_and_default_oncohawk_match_with_cli_and_site_overrides(self):
+        pairs = [("pair", self.chr1[100:200], reverse_complement(self.chr1[300:400]))]
+        self.reads(pairs)
+        self.samples()
+        site = self.directory / "site.config"
+        site.write_text("process.withName.BWAMEM2_MEM.cpus = 2\n"
+                        "process.withName.BWAMEM2_MEM.memory = '1 GB'\n"
+                        "trace.fields = 'task_id,name,cpus,memory'\n")
+        observed = []
+        for selected, destination in [(None, "default"), ("oncohawk", "explicit")]:
+            self.output = self.directory / destination
+            result = self.align(workflow=selected, config=site)
+            self.assertEqual(result.returncode, 0, result.stdout)
+            self.assert_bam_pairs(pairs)
+            observed.append((self.samtools("view", "/data/S1.bam"),
+                             self.samtools("idxstats", "/data/S1.bam")))
+            with (self.directory / f"trace-{self.run_count}.tsv").open() as handle:
+                trace = list(csv.DictReader(handle, delimiter="\t"))
+            self.assertTrue(trace)
+            self.assertTrue(all(task["name"].startswith("ONCOHAWK:") for task in trace))
+            mapper = next(task for task in trace if ":BWAMEM2_MEM (" in task["name"])
+            self.assertEqual(mapper["cpus"], "2")
+            self.assertEqual(mapper["memory"], "1 GB")
+            self.assertFalse((self.directory / "reference").exists())
+        self.assertEqual(observed[0], observed[1])
+
+    def test_completed_sample_remains_published_when_another_index_task_fails(self):
+        pairs = [("pair", self.chr1[100:200], reverse_complement(self.chr1[300:400]))]
+        rows = []
+        for sample in ["S1", "S2"]:
+            self.r1 = self.directory / f"{sample}_R1.fastq.gz"
+            self.r2 = self.directory / f"{sample}_R2.fastq.gz"
+            self.reads(pairs)
+            rows.append(dict(sample=sample, library="L1", flowcell="FC1", lane="1",
+                             fastq_1=str(self.r1), fastq_2=str(self.r2)))
+        self.sample_rows(rows)
+        # Use a public executor hook to fail S2 only after S1 has completed.
+        # Two index slots avoid depending on task submission order.
+        failure = self.directory / "failure.config"
+        failure.write_text("process { withName: SAMTOOLS_INDEX {\n"
+                           "  maxForks = 2\n"
+                           "  beforeScript = { meta.sample == 'S2' ? \""
+                           "for attempt in {1..60}; do "
+                           f"if test -s '{self.output}/S1.bam.bai'; then exit 17; fi; "
+                           "sleep 1; done; exit 18\" : '' }\n"
+                           "} }\n")
+        result = self.align(config=failure)
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("Error executing process > 'ONCOHAWK:SAMTOOLS_INDEX (S2)'", result.stdout)
+        self.assertIn("17", result.stdout)
+        self.assert_bam_pairs(pairs, sample="S1")
+        self.assertTrue((self.output / "S1.bam.bai").is_file())
+        self.assertFalse((self.output / "S2.bam").exists())
+        self.assertFalse((self.output / "S2.bam.bai").exists())
 
     def test_valid_sample_name_cannot_collide_with_internal_mapped_bam(self):
         self.reads([("known", self.chr1[100:200], reverse_complement(self.chr1[300:400]))])
@@ -306,7 +363,8 @@ class AlignmentTests(unittest.TestCase):
                 trace = list(csv.DictReader(handle, delimiter="\t"))
             labels = {}
             for process in ["CUTADAPT", "BWAMEM2_MEM"]:
-                names = [task["name"] for task in trace if task["name"].startswith(f"{process} (")]
+                names = [task["name"].split(":")[-1] for task in trace
+                         if task["name"].split(":")[-1].startswith(f"{process} (")]
                 self.assertEqual(len(names), 3)
                 labels[process] = [name[len(process) + 2:-1] for name in names]
                 self.assertEqual(len(set(labels[process])), 3)
@@ -593,7 +651,7 @@ class AlignmentTests(unittest.TestCase):
             handle.write("@different_name/2\nACGTACGTACGTACGT\n+\nIIIIIIIIIIIIIIII\n")
         result = self.align()
         self.assertNotEqual(result.returncode, 0, result.stdout)
-        self.assertIn("Error executing process > 'CUTADAPT", result.stdout)
+        self.assertIn("Error executing process > 'ONCOHAWK:CUTADAPT", result.stdout)
         self.assertFalse((self.output / "S1.bam").exists())
         self.assertFalse((self.output / "S1.bam.bai").exists())
 

@@ -121,7 +121,7 @@ class ReferencePreparationTests(unittest.TestCase):
         self.run_count += 1
         run_number = self.run_count
         command = [
-            os.environ.get("NEXTFLOW", "nextflow"), "run", str(project / "pipelines/reference"),
+            os.environ.get("NEXTFLOW", "nextflow"), "run", str(project), "--workflow", "prepare_reference_bundle",
             "-profile", "docker,test",
             "-c", str(self.http_config),
             "-with-trace", str(self.directory / f"trace-{run_number}.tsv"),
@@ -171,13 +171,16 @@ class ReferencePreparationTests(unittest.TestCase):
         self.assertTrue(all(entry["version"] for entry in manifest["tools"]))
         self.assertEqual(set(manifest["modules"]), {"gunzip", "bedtools/maskfasta", "bwamem2/index"})
         hashes = manifest["workflow"]["source_sha256"]
-        self.assertIn("pipelines/reference/main.nf", hashes)
-        self.assertIn("pipelines/reference/nextflow.config", hashes)
+        self.assertIn("workflows/prepare_reference_bundle.nf", hashes)
+        self.assertIn("main.nf", hashes)
+        self.assertIn("nextflow.config", hashes)
+        self.assertIn("conf/prepare_reference_bundle.config", hashes)
+        self.assertIn("conf/prepare_reference_bundle_resources.config", hashes)
         self.assertIn("conf/common.config", hashes)
         self.assertIn("bin/validate_reference.py", hashes)
         self.assertIn("bin/download_reference.py", hashes)
         self.assertIn("modules/nf-core/bwamem2/index/main.nf", hashes)
-        self.assertFalse(any(path.startswith("pipelines/alignment/") for path in hashes))
+        self.assertFalse(any("oncohawk" in path or "knowledge" in path for path in hashes))
         self.assertFalse(any(path.startswith("conf/containers_") for path in hashes))
         for source, checksum in hashes.items():
             self.assertFalse(Path(source).is_absolute())
@@ -188,7 +191,7 @@ class ReferencePreparationTests(unittest.TestCase):
 
     def assert_reference_labels(self, label, downloads=False, compressed=True):
         with (self.directory / f"trace-{self.run_count}.tsv").open() as handle:
-            names = [row["name"] for row in csv.DictReader(handle, delimiter="\t")]
+            names = [row["name"].split(":")[-1] for row in csv.DictReader(handle, delimiter="\t")]
         expected = [f"{process} ({label})" for process in
                     ["REFERENCE_VALIDATE", "BEDTOOLS_MASKFASTA", "BWAMEM2_INDEX", "REFERENCE_BUNDLE"]]
         if compressed:
@@ -227,7 +230,7 @@ class ReferencePreparationTests(unittest.TestCase):
         self.assertIn("502 Fixture tunnel rejected", result.stdout)
         self.assertTrue(requests)
         with (self.directory / f"trace-{self.run_count}.tsv").open() as handle:
-            names = [row["name"] for row in csv.DictReader(handle, delimiter="\t")]
+            names = [row["name"].split(":")[-1] for row in csv.DictReader(handle, delimiter="\t")]
         self.assertTrue(names)
         label = "GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.gz"
         self.assertTrue(set(names) <= {f"REFERENCE_DOWNLOAD ({label} / fasta)",
@@ -537,18 +540,41 @@ class ReferencePreparationTests(unittest.TestCase):
             self.assertIn("TTTTNNNNTTTTTTTTTTTT", (self.directory / "different-uri/reference.fa").read_text())
             self.assertEqual(len(list(store.glob("*/metadata.json"))), 3)
 
-    def test_downstream_source_changes_reuse_downloads_in_fresh_runs(self):
+    def copy_project(self):
         snapshot = self.directory / "pipeline-copy"
-        for directory in ("pipelines", "modules", "bin", "conf"):
+        for directory in ("workflows", "modules", "bin", "conf"):
             shutil.copytree(PROJECT / directory, snapshot / directory)
-        shutil.copyfile(PROJECT / "modules.json", snapshot / "modules.json")
+        for name in ("main.nf", "nextflow.config", "modules.json"):
+            shutil.copyfile(PROJECT / name, snapshot / name)
+        return snapshot
+
+    def test_analysis_only_edits_leave_reference_source_hashes_unchanged(self):
+        snapshot = self.copy_project()
+        # User paths remain relative to the external launch directory.
+        self.fasta = self.fasta.name
+        self.bed = self.bed.name
+        result = self.prepare(project=snapshot, default_output=True)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        before = json.loads((self.directory / "reference/bundle.json").read_text())
+        for name in ("workflows/oncohawk.nf", "conf/oncohawk.config", "conf/oncohawk_resources.config",
+                     "workflows/prepare_knowledge_bundle.nf"):
+            with (snapshot / name).open("a") as handle:
+                handle.write("\n// Analysis or deferred knowledge revision\n")
+        result = self.prepare("--outdir", "revised-reference", project=snapshot)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        after = json.loads((self.directory / "revised-reference/bundle.json").read_text())
+        self.assertEqual(before["workflow"]["source_sha256"], after["workflow"]["source_sha256"])
+        self.assertEqual(before["checksums"], after["checksums"])
+
+    def test_downstream_source_changes_reuse_downloads_in_fresh_runs(self):
+        snapshot = self.copy_project()
         with self.http_sources() as (base, requests, _payloads):
             self.fasta = f"{base}/source.fa.gz"
             self.bed = f"{base}/exclusions.bed"
             result = self.prepare("--downloads_dir", "stored sources", project=snapshot)
             self.assertEqual(result.returncode, 0, result.stdout)
             changed = ("bin/validate_reference.py", "bin/package_reference.py",
-                       "pipelines/reference/nextflow.config")
+                       "conf/prepare_reference_bundle.config")
             for name in changed:
                 with (snapshot / name).open("a") as handle:
                     handle.write("\n# Downstream code revision\n" if name.endswith(".py") else

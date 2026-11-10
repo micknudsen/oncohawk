@@ -1,7 +1,6 @@
 // Bundle assembly has no upstream nf-core equivalent; tool steps remain pristine.
 process REFERENCE_BUNDLE {
     container 'python@sha256:a5bab0ff300f91231c2e68bf73a8a8d60762ac39ce1c50eaf6803e4c38a9062b'
-    publishDir params.outdir, mode: 'copy', overwrite: false, saveAs: { path -> path.replaceFirst('bundle/', '') }
 
     input:
     path fasta

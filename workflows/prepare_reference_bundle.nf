@@ -1,9 +1,9 @@
-include { GUNZIP } from '../../modules/nf-core/gunzip/main'
-include { BEDTOOLS_MASKFASTA } from '../../modules/nf-core/bedtools/maskfasta/main'
-include { BWAMEM2_INDEX } from '../../modules/nf-core/bwamem2/index/main'
-include { REFERENCE_BUNDLE } from '../../modules/local/reference_bundle'
-include { REFERENCE_VALIDATE } from '../../modules/local/reference_validate'
-include { REFERENCE_DOWNLOAD } from '../../modules/local/reference_download'
+include { GUNZIP } from '../modules/nf-core/gunzip/main'
+include { BEDTOOLS_MASKFASTA } from '../modules/nf-core/bedtools/maskfasta/main'
+include { BWAMEM2_INDEX } from '../modules/nf-core/bwamem2/index/main'
+include { REFERENCE_BUNDLE } from '../modules/local/reference_bundle'
+include { REFERENCE_VALIDATE } from '../modules/local/reference_validate'
+include { REFERENCE_DOWNLOAD } from '../modules/local/reference_download'
 
 def encoded(value) {
     return groovy.json.JsonOutput.toJson(value).getBytes('UTF-8').encodeBase64().toString()
@@ -53,9 +53,10 @@ def sourceIdentity(value, official) {
     return identity
 }
 
-workflow {
-    repository = projectDir.parent.parent
-    if (file(params.outdir).exists())
+workflow PREPARE_REFERENCE_BUNDLE {
+    main:
+    repository = projectDir
+    if (workflow.outputDir.exists())
         error('Reference bundle output directory already exists; choose a new --outdir')
     ncbi_base = 'https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/'
     official_fasta = params.fasta == ncbi_base + 'GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.gz'
@@ -107,9 +108,11 @@ workflow {
     BWAMEM2_INDEX(BEDTOOLS_MASKFASTA.out.fasta)
     modules = new groovy.json.JsonSlurper().parseText(file("$repository/modules.json").text)
     source_paths = [
-        'pipelines/reference/*.nf', 'pipelines/reference/*.config',
+        'main.nf', 'nextflow.config', 'workflows/prepare_reference_bundle.nf',
+        'conf/prepare_reference_bundle.config', 'conf/prepare_reference_bundle_resources.config',
         'conf/common.config', 'conf/slurm.config', 'modules.json',
-        'bin/validate_reference.py', 'bin/package_reference.py', 'bin/download_reference.py', 'modules/local/*.nf',
+        'bin/validate_reference.py', 'bin/package_reference.py', 'bin/download_reference.py',
+        'modules/local/reference_validate.nf', 'modules/local/reference_bundle.nf', 'modules/local/reference_download.nf',
         'modules/nf-core/gunzip/main.nf', 'modules/nf-core/bedtools/maskfasta/main.nf',
         'modules/nf-core/bwamem2/index/main.nf'
     ]
@@ -131,4 +134,7 @@ workflow {
         BEDTOOLS_MASKFASTA.out.fasta.map { _meta, path -> path }, BWAMEM2_INDEX.out.index.map { _meta, path -> path },
         REFERENCE_VALIDATE.out.report, metadata, versions, file("$repository/bin/package_reference.py"), reference_label
     )
+
+    emit:
+    bundle = REFERENCE_BUNDLE.out
 }
