@@ -156,9 +156,8 @@ class AlignmentTests(unittest.TestCase):
         self.assertEqual(len(self.samtools("view", "/data/samples/S1/alignments/S1.bam",
                                           "chr1:101-150").splitlines()), 1)
         self.assertFalse((self.directory / "alignments").exists())
-        self.assertEqual(list(self.directory.glob("trace-*.tsv")), [])
-        self.assertEqual(list(self.directory.glob("report*.html")), [])
-        self.assertEqual(list(self.directory.glob("timeline*.html")), [])
+        for pattern in ("trace*", "report*", "timeline*", "dag*"):
+            self.assertEqual(list(self.directory.glob(pattern)), [])
 
     def test_explicit_and_default_oncohawk_match_with_cli_and_site_overrides(self):
         pairs = [("pair", self.chr1[100:200], reverse_complement(self.chr1[300:400]))]
