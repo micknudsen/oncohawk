@@ -12,7 +12,7 @@ jobs:
   validation:
     name: Tests and validation
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       NXF_VER: '26.10.5'
       NXF_ANSI_LOG: 'false'
