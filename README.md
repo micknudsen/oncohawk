@@ -2,7 +2,7 @@
 
 Oncohawk is a Nextflow workflow for tumor-only short-read DNA WGS analysis. It prepares a reusable **reference bundle** and aligns gzipped FASTQ pairs to produce one coordinate-sorted, indexed BAM per sample with duplicates marked and retained. A sample sheet can combine multiple samples, libraries, lanes, and FASTQ chunks, with optional adapter settings for each mate in each row. Read groups are preserved, and duplicate detection combines lanes within each library while keeping distinct libraries separate. Downstream analysis remains deferred.
 
-The [milestone 1 acceptance record](docs/milestone-1-acceptance.md) maps the completed scope to tests, merged implementation PRs, and recorded local/CI results as of 2026-11-01.
+The [milestone 1 acceptance record](docs/milestone-1-acceptance.md) maps the original scope to tests and recorded results as of 2026-11-01. The [architecture migration acceptance record](docs/architecture-migration-acceptance.md) tracks the later shared entrypoint, sample layout, and execution diagnostics separately.
 
 Use Nextflow **26.10.5**, Java **21.0.13+9**, Python **3.12** for tests, and a running Docker installation for local development. Containers supply the bioinformatics tools; Conda execution is unsupported. The [reference-bundle guide](docs/reference-bundle.md) and [alignment guide](docs/alignment.md) describe inputs, outputs, runtime pins, and production use.
 
@@ -26,7 +26,7 @@ Unknown workflow names fail before tasks start. Analysis requires no knowledge b
 
 Root `main.nf` owns selection and publication; implementations live in `workflows/`. Root `nextflow.config` loads shared and selected-workflow settings from `conf/`, preserving process-selector isolation. Modules remain shared. The former `pipelines/reference` and `pipelines/alignment` entrypoints are removed.
 
-Analysis publishes `<sample>.bam` and `<sample>.bam.bai` under `results/samples/<sample>/alignments/`. An `--outdir` override replaces only `results`, retaining that sample layout and the filenames. No variant/report placeholders or diagnostics are created by this layout. Placement of explicitly enabled diagnostics under `results/execution/` follows in [#28](https://github.com/micknudsen/oncohawk/issues/28).
+Analysis publishes `<sample>.bam` and `<sample>.bam.bai` under `results/samples/<sample>/alignments/`. An `--outdir` override replaces only `results`, retaining that sample layout and the filenames. Native trace, execution report, timeline, and DAG diagnostics remain opt-in and, when enabled, go under `<outdir>/execution/`. An ordinary invocation creates no diagnostics or empty execution, variant, or report directories. See [execution diagnostics](docs/alignment.md#execution-diagnostics) for commands and output protection.
 
 Reference URLs use a persistent, integrity-checked download store, defaulting to `downloads` in the launch directory. Set `--downloads_dir /persistent/path` to share it across runs independently of Nextflow work directories and `-resume`. See [persistent downloads](docs/reference-bundle.md#persistent-downloads) for integrity, concurrency, and cluster setup.
 

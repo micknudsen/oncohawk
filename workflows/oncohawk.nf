@@ -131,8 +131,11 @@ workflow ONCOHAWK {
     main:
     if (!params.input || !params.reference_bundle)
         error('Alignment requires --input and --reference_bundle')
-    if (workflow.outputDir.exists())
-        error('Alignment output directory already exists; choose a new --outdir')
+    output_path = params._oncohawk_output_path
+    if (!(output_path instanceof java.nio.file.Path))
+        error('Invalid internal output-directory state; do not override _oncohawk_output_path')
+    if (output_path != workflow.outputDir)
+        error('Analysis output selection must use --outdir; do not override native outputDir or -output-dir')
     reference = alignmentReference(params.reference_bundle)
     sheet = file(params.input, checkIfExists: true)
     inputs = channel.of(sheet)
