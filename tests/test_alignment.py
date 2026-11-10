@@ -77,16 +77,23 @@ class AlignmentTests(unittest.TestCase):
             writer.writeheader()
             writer.writerows(rows)
 
-    def align(self, launch_directory=None, default_output=False, workflow=None, config=None, trace=True):
+    def align(self, launch_directory=None, default_output=False, workflow=None, config=None, trace=False,
+              diagnostics=False, outdir=None, config_mode="-c", arguments=()):
         self.run_count += 1
+        diagnostic_flags = (["-with-trace", "trace.tsv", "-with-report", "report.html",
+                             "-with-timeline", "timeline.html", "-with-dag", "dag.html"]
+                            if diagnostics else
+                            ["-with-trace", "trace.tsv"]
+                            if trace else [])
         result = subprocess.run([
-            os.environ.get("NEXTFLOW", "nextflow"), "run", str(PROJECT),
+            os.environ.get("NEXTFLOW", "nextflow"),
+            *([config_mode, str(config)] if config else []), "run", str(PROJECT),
             "-profile", "docker,test",
-            *(["-with-trace", str(self.directory / f"trace-{self.run_count}.tsv")] if trace else []),
+            *diagnostic_flags,
             "--reference_bundle", str(self.bundle), "--input", str(self.sheet),
-            *(["--outdir", str(self.output)] if not default_output else []),
+            *(["--outdir", str(outdir if outdir is not None else self.output)] if not default_output else []),
             *(["--workflow", workflow] if workflow else []),
-            *(["-c", str(config)] if config else []),
+            *arguments,
         ], cwd=launch_directory or self.directory, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         (self.directory / f"alignment-{self.run_count}.log").write_text(result.stdout)
         self.assertNotIn("There's no process matching config selector", result.stdout)
@@ -99,8 +106,10 @@ class AlignmentTests(unittest.TestCase):
             "-v", f"{self.output}:/data:ro", SAMTOOLS, "samtools", *arguments,
         ], text=True)
 
-    def assert_sample_tree(self, samples):
+    def assert_sample_tree(self, samples, diagnostics=()):
         expected = ["samples"]
+        if diagnostics:
+            expected.extend(["execution", *[f"execution/{name}" for name in diagnostics]])
         for sample in samples:
             expected.extend([
                 f"samples/{sample}", f"samples/{sample}/alignments",
@@ -159,6 +168,108 @@ class AlignmentTests(unittest.TestCase):
         for pattern in ("trace*", "report*", "timeline*", "dag*"):
             self.assertEqual(list(self.directory.glob(pattern)), [])
 
+    def test_enabled_diagnostics_describe_execution_under_default_results(self):
+        pairs = [("pair", self.chr1[100:200], reverse_complement(self.chr1[300:400]))]
+        self.reads(pairs)
+        self.samples()
+        result = self.align(default_output=True, diagnostics=True)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assert_sample_tree(["S1"], ["trace.tsv", "report.html", "timeline.html", "dag.html"])
+        self.assert_bam_pairs(pairs)
+        with (self.output / "execution/trace.tsv").open() as handle:
+            trace = list(csv.DictReader(handle, delimiter="\t"))
+        self.assertTrue(trace)
+        self.assertTrue(all(task["name"].startswith("ONCOHAWK:") for task in trace))
+        self.assertTrue(any("CUTADAPT (S1 / L1 / FC1 / 1 / " in task["name"] for task in trace))
+        for name in ("report.html", "timeline.html", "dag.html"):
+            content = (self.output / "execution" / name).read_text()
+            self.assertIn("CUTADAPT", content)
+            self.assertIn("BWAMEM2_MEM", content)
+        for name in ("trace.tsv", "report.html", "timeline.html", "dag.html"):
+            self.assertFalse((self.directory / name).exists())
+
+    def test_enabled_diagnostics_follow_relative_output_and_site_overrides(self):
+        pairs = [("pair", self.chr1[100:200], reverse_complement(self.chr1[300:400]))]
+        self.reads(pairs)
+        self.samples()
+        launch = self.directory / "external launch"
+        launch.mkdir()
+        (launch / "results").mkdir()
+        sentinel = launch / "results/existing.txt"
+        sentinel.write_text("existing default results")
+        (launch / "real parent").mkdir()
+        (launch / "parent link").symlink_to(launch / "real parent", target_is_directory=True)
+        for mode, selected, relative in [("-c", None, "parent link/fresh results"),
+                                         ("-C", "oncohawk", "unused/../custom results")]:
+            with self.subTest(config_mode=mode):
+                site = self.directory / f"site-{mode}.config"
+                site.write_text((f"includeConfig '{PROJECT / 'nextflow.config'}'\n" if mode == "-C" else "") +
+                                "process { withName: BWAMEM2_MEM { cpus = 2 } }\n")
+                self.output = Path(os.path.normpath(launch / relative))
+                result = self.align(launch_directory=launch, workflow=selected, config=site,
+                                    config_mode=mode, outdir=relative, diagnostics=True)
+                self.assertEqual(result.returncode, 0, result.stdout)
+                self.assert_sample_tree(["S1"], ["trace.tsv", "report.html", "timeline.html", "dag.html"])
+                self.assert_bam_pairs(pairs)
+                with (self.output / "execution/trace.tsv").open() as handle:
+                    trace = list(csv.DictReader(handle, delimiter="\t"))
+                self.assertTrue(any("BWAMEM2_MEM (S1 / L1 / FC1 / 1 / " in task["name"] for task in trace))
+                self.assertEqual(sentinel.read_text(), "existing default results")
+                self.assertEqual(sorted(path.name for path in (launch / "results").iterdir()), ["existing.txt"])
+                for name in ("trace.tsv", "report.html", "timeline.html", "dag.html"):
+                    self.assertFalse((launch / name).exists())
+
+    def test_enabled_diagnostics_preserve_genuinely_existing_roots(self):
+        self.reads([("pair", self.chr1[100:200], reverse_complement(self.chr1[300:400]))])
+        self.samples()
+        for label, content in [("empty", {}),
+                               ("sample", {"samples/S1/alignments/S1.bam": b"existing BAM"}),
+                               ("diagnostic", {"execution/previous-trace.tsv": b"existing trace"})]:
+            with self.subTest(existing=label):
+                self.output = self.directory / label
+                self.output.mkdir()
+                for name, data in content.items():
+                    path = self.output / name
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(data)
+                result = self.align(diagnostics=True)
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertIn("Alignment output directory already exists", result.stdout)
+                self.assertNotIn("Submitted process", result.stdout)
+                for name, data in content.items():
+                    self.assertEqual((self.output / name).read_bytes(), data)
+                self.assertFalse((self.output / "samples/S1/alignments/S1.bam.bai").exists())
+
+    def test_output_guard_rejects_native_path_mismatch_and_supplied_internal_state(self):
+        self.reads([("pair", self.chr1[100:200], reverse_complement(self.chr1[300:400]))])
+        self.samples()
+        for mode in ("-output-dir", "-c", "-C"):
+            with self.subTest(native_override=mode):
+                destination = self.directory / f"native-output-{mode}"
+                if mode == "-output-dir":
+                    result = self.align(arguments=[mode, str(destination)])
+                else:
+                    config = self.directory / f"native-{mode}.config"
+                    config.write_text((f"includeConfig '{PROJECT / 'nextflow.config'}'\n"
+                                       if mode == "-C" else "") + f"outputDir = '{destination}'\n")
+                    result = self.align(config=config, config_mode=mode)
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertIn("Analysis output selection must use --outdir", result.stdout)
+                self.assertNotIn("Submitted process", result.stdout)
+                self.assertFalse(destination.exists())
+        self.output.mkdir()
+        sentinel = self.output / "existing.txt"
+        sentinel.write_text("preserved")
+        supplied = self.directory / "supplied-params.json"
+        supplied.write_text(json.dumps({"_oncohawk_output_state": {
+            "path": str(self.output), "existed": False,
+        }}))
+        result = self.align(arguments=["-params-file", str(supplied)])
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("Invalid internal output-directory state", result.stdout)
+        self.assertNotIn("Submitted process", result.stdout)
+        self.assertEqual(sentinel.read_text(), "preserved")
+
     def test_explicit_and_default_oncohawk_match_with_cli_and_site_overrides(self):
         pairs = [("pair", self.chr1[100:200], reverse_complement(self.chr1[300:400]))]
         self.reads(pairs)
@@ -172,13 +283,13 @@ class AlignmentTests(unittest.TestCase):
         observed = []
         for selected, destination in [(None, "default"), ("oncohawk", "explicit")]:
             self.output = self.directory / destination
-            result = self.align(workflow=selected, config=site)
+            result = self.align(workflow=selected, config=site, trace=True)
             self.assertEqual(result.returncode, 0, result.stdout)
             self.assert_bam_pairs(pairs)
-            self.assert_sample_tree(["S1"])
+            self.assert_sample_tree(["S1"], ["trace.tsv"])
             observed.append((self.samtools("view", "/data/samples/S1/alignments/S1.bam"),
                              self.samtools("idxstats", "/data/samples/S1/alignments/S1.bam")))
-            with (self.directory / f"trace-{self.run_count}.tsv").open() as handle:
+            with (self.output / "execution/trace.tsv").open() as handle:
                 trace = list(csv.DictReader(handle, delimiter="\t"))
             self.assertTrue(trace)
             self.assertTrue(all(task["name"].startswith("ONCOHAWK:") for task in trace))
@@ -208,17 +319,21 @@ class AlignmentTests(unittest.TestCase):
                            f"if test -s '{self.output}/samples/S1/alignments/S1.bam.bai'; then exit 17; fi; "
                            "sleep 1; done; exit 18\" : '' }\n"
                            "} }\n")
-        result = self.align(config=failure)
+        result = self.align(config=failure, diagnostics=True)
         self.assertNotEqual(result.returncode, 0, result.stdout)
         self.assertIn("Error executing process > 'ONCOHAWK:SAMTOOLS_INDEX (S2)'", result.stdout)
         self.assertIn("17", result.stdout)
         self.assert_bam_pairs(pairs, sample="S1")
         self.assertEqual(len(self.samtools("view", "/data/samples/S1/alignments/S1.bam",
                                           "chr1:101-150").splitlines()), 1)
-        self.assert_sample_tree(["S1"])
+        self.assert_sample_tree(["S1"], ["trace.tsv", "report.html", "timeline.html", "dag.html"])
         self.assertTrue((self.output / "samples/S1/alignments/S1.bam.bai").is_file())
         self.assertFalse((self.output / "samples/S2/alignments/S2.bam").exists())
         self.assertFalse((self.output / "samples/S2/alignments/S2.bam.bai").exists())
+        with (self.output / "execution/trace.tsv").open() as handle:
+            trace = list(csv.DictReader(handle, delimiter="\t"))
+        self.assertTrue(any(task["name"] == "ONCOHAWK:SAMTOOLS_INDEX (S2)" and task["status"] == "FAILED"
+                            for task in trace))
 
     def test_valid_sample_name_cannot_collide_with_internal_mapped_bam(self):
         self.reads([("known", self.chr1[100:200], reverse_complement(self.chr1[300:400]))])
@@ -382,9 +497,9 @@ class AlignmentTests(unittest.TestCase):
         for label, ordered in [("original", rows), ("reordered", rows[::-1])]:
             self.output = self.directory / label
             self.sample_rows(ordered)
-            result = self.align()
+            result = self.align(trace=True)
             self.assertEqual(result.returncode, 0, result.stdout)
-            with (self.directory / f"trace-{self.run_count}.tsv").open() as handle:
+            with (self.output / "execution/trace.tsv").open() as handle:
                 trace = list(csv.DictReader(handle, delimiter="\t"))
             labels = {}
             for process in ["CUTADAPT", "BWAMEM2_MEM"]:

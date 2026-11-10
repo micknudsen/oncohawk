@@ -51,6 +51,19 @@ class PipelineConfigurationTests(unittest.TestCase):
                         for process in foreign:
                             self.assertNotIn(f"withName:{process}", result.stdout)
                         self.assertIn(f"params.workflow = '{selected}'", result.stdout)
+                        for diagnostic in ["trace", "report", "timeline", "dag"]:
+                            destination = f"{diagnostic}.directory = 'execution'"
+                            if selected == "oncohawk":
+                                self.assertIn(destination, result.stdout)
+                            else:
+                                self.assertNotIn(f"{diagnostic}.directory =", result.stdout)
+                            enabled = re.search(rf"^{diagnostic}\.enabled = (.+)$",
+                                                result.stdout, re.MULTILINE)
+                            # An omitted enablement setting retains Nextflow's disabled default.
+                            if enabled:
+                                self.assertEqual(enabled.group(1), "false", result.stdout)
+                        if selected != "oncohawk":
+                            self.assertNotIn("params._oncohawk_output_state", result.stdout)
                         if selected != "prepare_knowledge_bundle":
                             expected = "reference" if selected == "prepare_reference_bundle" else "results"
                             self.assertIn(f"params.outdir = '{expected}'", result.stdout)
@@ -65,6 +78,27 @@ class PipelineConfigurationTests(unittest.TestCase):
                         else:
                             self.assertIn("docker.enabled = true", result.stdout)
                             self.assertIn("process.maxForks = 1", result.stdout)
+
+    def test_analysis_resources_accept_additive_and_replacement_configuration(self):
+        with tempfile.TemporaryDirectory() as directory:
+            override = Path(directory) / "resources.config"
+            for flag in ["-c", "-C"]:
+                with self.subTest(config=flag):
+                    override.write_text(
+                        (f"includeConfig '{PROJECT / 'nextflow.config'}'\n" if flag == "-C" else "")
+                        + f"includeConfig '{PROJECT / 'conf/site.example.config'}'\n"
+                        + "process { withName: BWAMEM2_MEM { cpus = 3; memory = '6 GB' } }\n")
+                    command = [os.environ.get("NEXTFLOW", "nextflow"), flag, str(override),
+                               "config", str(PROJECT), "-profile", "slurm", "-flat"]
+                    result = subprocess.run(command, cwd=directory, text=True,
+                                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                    self.assertEqual(result.returncode, 0, result.stdout)
+                    for expected in ["process.executor = 'slurm'", "apptainer.enabled = true",
+                                     "process.queue = 'REPLACE_WITH_PARTITION'",
+                                     "process.'withName:BWAMEM2_MEM'.cpus = 3",
+                                     "process.'withName:BWAMEM2_MEM'.memory = '6 GB'",
+                                     "outputDir = 'results'", "trace.directory = 'execution'"]:
+                        self.assertIn(expected, result.stdout)
 
 
 if __name__ == "__main__":

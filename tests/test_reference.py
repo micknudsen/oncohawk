@@ -154,6 +154,11 @@ class ReferencePreparationTests(unittest.TestCase):
         })
         expected = {"reference.fa" + suffix for suffix in
                     [".0123", ".amb", ".ann", ".bwt.2bit.64", ".pac"]}
+        self.assertEqual({path.relative_to(self.bundle).as_posix() for path in self.bundle.rglob("*")},
+                         {"bundle.json", "reference.fa", "bwamem2",
+                          "bwamem2/reference.fa.0123", "bwamem2/reference.fa.amb",
+                          "bwamem2/reference.fa.ann", "bwamem2/reference.fa.bwt.2bit.64",
+                          "bwamem2/reference.fa.pac"})
         self.assertEqual({p.name for p in (self.bundle / "bwamem2").iterdir()}, expected)
         self.assertTrue(all(p.stat().st_size > 0 for p in (self.bundle / "bwamem2").iterdir()))
         self.assertEqual((self.bundle / "bwamem2/reference.fa.amb").read_text().splitlines(),

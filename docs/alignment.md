@@ -80,7 +80,7 @@ Coordinate-sorted row BAMs are grouped by sample and passed to samtools merge in
 
 ## Outputs and failures
 
-The default output root is `results`; use `--outdir` to choose a different fresh destination. Relative overrides resolve from the launch directory. Each sample's BAM and index are grouped under `samples/<sample>/alignments/`, retaining the sample ID in both filenames. An override changes only the root; it does not change the sample hierarchy. Existing output roots are rejected before processing, preserving previous results.
+The default output root is `results`; use `--outdir` to choose a different fresh destination. Relative overrides resolve from the launch directory. Quote paths containing spaces. Each sample's BAM and index are grouped under `samples/<sample>/alignments/`, retaining the sample ID in both filenames. An override changes only the root; it does not change the sample hierarchy. Existing output roots, including empty directories, are rejected before processing, preserving previous results.
 
 For the two samples in the example, successful completion publishes exactly one BAM and index per sample:
 
@@ -97,7 +97,7 @@ results/
             └── S2.bam.bai
 ```
 
-For example, `--outdir /path/to/new-results` places S1's BAM at `/path/to/new-results/samples/S1/alignments/S1.bam`. No flat duplicate BAMs or empty variant/report directories are published. Execution diagnostics remain opt-in; their placement under `results/execution/` belongs to [#28](https://github.com/micknudsen/oncohawk/issues/28).
+For example, `--outdir /path/to/new-results` places S1's BAM at `/path/to/new-results/samples/S1/alignments/S1.bam`. No flat duplicate BAMs or empty variant/report directories are published. With diagnostics disabled, the tree above contains the entire published analysis output; there is no `execution` directory.
 
 Each BAM is coordinate-sorted, contains only that sample's records, preserves its read-group headers and read tags, and retains duplicate reads with duplicate flags set. The final index supports regional BAM queries.
 
@@ -105,7 +105,48 @@ If adapter removal and length filtering leave no pairs for a sample, successful 
 
 Native Nextflow workflow outputs publish each completed BAM and index after indexing succeeds. A failed preprocessing, mapping, merging, duplicate-marking, or indexing task fails the workflow instead of publishing that sample as completed. Other samples may already have completed; a failed run is not an atomic batch publication. Consult the reported task directory and its `.command.err`/`.command.out` files when diagnosing a failure.
 
-Tool logs and Picard duplicate metrics remain in task work directories. Add `-with-trace` to record a Nextflow run trace. These diagnostics are separate from the published BAM/index contract.
+Tool logs and Picard duplicate metrics remain in task work directories. Execution diagnostics are separate from the published BAM/index contract and use the native opt-in controls below.
+
+## Execution diagnostics
+
+Enable any combination of Nextflow's trace, execution report, timeline, and DAG using `-with-trace`, `-with-report`, `-with-timeline`, and `-with-dag`. None is enabled by default. For analysis, their native directory settings place generated artifacts under `<outdir>/execution/`, alongside `samples/`; reference preparation retains its own bundle contract and does not load these analysis settings.
+
+Bare flags use Nextflow's default filenames. To choose predictable filenames, supply relative names:
+
+```bash
+nextflow run . -profile docker,test \
+  --input /path/to/samples.csv \
+  --reference_bundle /path/to/prepared-bundle \
+  --outdir /path/to/new-results \
+  -with-trace trace.tsv \
+  -with-report report.html \
+  -with-timeline timeline.html \
+  -with-dag dag.html
+```
+
+For two completed samples, this command publishes:
+
+```text
+new-results/
+├── execution/
+│   ├── trace.tsv
+│   ├── report.html
+│   ├── timeline.html
+│   └── dag.html
+└── samples/
+    ├── S1/
+    │   └── alignments/
+    │       ├── S1.bam
+    │       └── S1.bam.bai
+    └── S2/
+        └── alignments/
+            ├── S2.bam
+            └── S2.bam.bai
+```
+
+Use bare flags or relative diagnostic filenames; Nextflow rejects absolute diagnostic filenames when these directory settings are active. Use `--outdir` to choose the analysis output root. Native `-output-dir` or configuration `outputDir` settings that resolve to a different root are rejected because they would bypass the output-root validation. Existing site and resource settings remain configurable through `-c` and `-C`; keep output selection in `--outdir`. Default selection and explicit `--workflow oncohawk` use the same paths, including when launching from outside the checkout.
+
+Diagnostics can initialize before workflow input validation. Their creation during a fresh invocation does not count as a preexisting output collision; a root that already existed before invocation remains an error, even with diagnostics enabled. A failed invocation may leave execution diagnostics and already completed samples. It still fails overall, and it does not publish a failed sample as completed. Choose a new output root for another invocation instead of reusing the failed run's directory. Engine work directories, caches, and `.nextflow.log` retain their normal locations outside this publication layout.
 
 ## Production with SLURM and Apptainer
 
