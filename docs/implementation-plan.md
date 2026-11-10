@@ -69,6 +69,14 @@ At the completed implementation snapshot `ef54b748c57414f8a4526877396f15c4718c51
 
 ## Pipeline directory migration — 2026-11-01
 
+**Historical implementation record.** The separate public entrypoints described here were superseded by the shared-dispatcher design on 2026-11-10. The paragraph below and its verification results describe the earlier migration.
+
 Following the [accepted directory-separation design](design.md#pipeline-directory-separation--2026-11-01), reference preparation and alignment have separate entrypoints and configuration in `pipelines/reference/` and `pipelines/alignment/`. Shared execution profiles and process defaults live in `conf/common.config`; the shared site example holds cluster settings, while each pipeline owns its SLURM resource allocations. The root entrypoints are removed. Defaults are `reference` and `alignments`, overridable with `--outdir`. Reference source hashes cover preparation and the shared sources it uses, excluding alignment-only files. Public workflow tests exercise the new commands and reject unmatched-selector warnings. Backward compatibility is not a constraint before the first official release.
 
 Local verification on 2026-11-01 covered all 36 public workflow cases with real Docker containers (35 passed in the full run; a corrected assertion in the new alignment-default test passed on targeted rerun), plus the configuration-isolation test for Docker/test and SLURM/site settings. All 55 pinned nf-core files matched upstream, and local Markdown file links and whitespace checks passed. This is local verification of the migration; no new CI or HPC run is claimed.
+
+## Shared dispatcher implementation slice — 2026-11-10
+
+Issue [#26](https://github.com/micknudsen/oncohawk/issues/26) migrates the public interface to `nextflow run .`, with `--workflow prepare_reference_bundle` for preparation and omitted or explicit `--workflow oncohawk` for alignment. Workflow implementations live in `workflows/`; root `main.nf` owns selection and publication; root `nextflow.config` loads shared and selected settings from `conf/`. The selected workflow retains its resource configuration and reference-only provenance boundaries. The old pipeline entrypoints are removed without wrappers.
+
+At this slice, outputs remain a reference bundle under `reference` and flat sample BAMs/indexes under `alignments`, each overridable with `--outdir`. The accepted final sample hierarchy and enabled diagnostics follow sequentially in #27 and #28. The dated test results above apply to their original commits; this entry records the migration scope and makes no new CI, merge, or HPC claim.

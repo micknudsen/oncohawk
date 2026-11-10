@@ -2,7 +2,7 @@
 
 Fresh session started 2026-11-01. The [requirements](requirements.md) contain the accepted restart brief. This document tracks only decisions needed for milestone 1.
 
-**Status: milestone-1 scope decisions complete through Q8; initial implementation completed.** The [implementation plan](implementation-plan.md) and [acceptance record](milestone-1-acceptance.md) document that work. The subsequent [pipeline-directory migration](#pipeline-directory-separation--2026-11-01) is accepted and authorized for implementation.
+**Status: milestone-1 scope decisions complete through Q8; initial implementation completed.** The [implementation plan](implementation-plan.md) and [acceptance record](milestone-1-acceptance.md) document that work. The [2026-11-01 pipeline-directory design](#pipeline-directory-separation--2026-11-01) is historical and superseded by the [2026-11-10 shared-dispatcher design](#public-workflow-architecture-review--2026-11-10). See the [dispatcher implementation checkpoint](#dispatcher-implementation-checkpoint--2026-11-10) for the first migration slice.
 
 The milestone spec is published as [GitHub issue #1](https://github.com/micknudsen/oncohawk/issues/1), with the confirmed workflow-level testing boundaries.
 
@@ -144,7 +144,7 @@ Formal workflow acceptance remains based on compact synthetic tests with Docker 
 
 ## Pipeline directory separation — 2026-11-01
 
-**Status: accepted on 2026-11-01; shared understanding confirmed and implementation authorized.**
+**Historical status: accepted and authorized on 2026-11-01. The separate public entrypoints were superseded by the shared-dispatcher decision on 2026-11-10. Configuration isolation, reference provenance, and the pre-release compatibility policy remain applicable.**
 
 Give reference preparation and alignment separate pipeline directories, each with its own `main.nf` and `nextflow.config`: `pipelines/reference/` and `pipelines/alignment/`. Selecting a pipeline should load its process configuration without selectors belonging only to the other pipeline.
 
@@ -186,7 +186,7 @@ On 2026-11-10, the specification was split into three sequential implementation 
 
 Later on 2026-11-10, the user authorized implementing the open issues one at a time using the implement skill, creating a PR for each, fixing CI failures, and merging only after all CI tests pass. The user also authorized a separate PR for the existing documentation changes. This subsequent instruction authorizes the implementation sequence without changing the accepted design.
 
-The user reaffirmed the intended three-workflow structure and accepted the public names `prepare_reference_bundle`, `prepare_knowledge_bundle`, and `oncohawk`, selected through the shared root `main.nf`. The existing requirements already place alignment within the report-generation workflow and defer knowledge preparation beyond milestone 1. The current standalone alignment entrypoint implements that milestone portion; it does not establish a fourth conceptual workflow.
+The user reaffirmed the intended three-workflow structure and accepted the public names `prepare_reference_bundle`, `prepare_knowledge_bundle`, and `oncohawk`, selected through the shared root `main.nf`. The existing requirements already place alignment within the report-generation workflow and defer knowledge preparation beyond milestone 1. At the design checkpoint, the standalone alignment entrypoint implemented that milestone portion; it does not establish a fourth conceptual workflow.
 
 This review revises the public entrypoint structure accepted on 2026-11-01. The reason for that earlier separation was isolation of workflow-specific process configuration. The earlier record contained no accepted shared-dispatcher decision; Q1–Q5 below establish the new design while preserving configuration isolation.
 
@@ -227,6 +227,12 @@ Preserve configuration isolation and reference-only provenance boundaries when c
 ### Shared-understanding checkpoint
 
 The intended migration exposes only the root dispatcher, replacing the separate `pipelines/reference` and `pipelines/alignment` public entrypoints without compatibility wrappers, consistent with the accepted pre-release policy. Existing analysis remains alignment-only and needs a sample sheet and prepared reference bundle, with no knowledge-bundle requirement yet. Reference preparation keeps its current inputs and default `reference` output directory. Tests and operator documentation must follow the new entrypoint and analysis output layout while preserving workflow behavior, readable task tags, download reuse, and provenance boundaries. The user confirmed this combined design on 2026-11-10. At that checkpoint, the design interview was complete and implementation remained a separate task; the subsequent authorization is recorded above.
+
+## Dispatcher implementation checkpoint — 2026-11-10
+
+The first implementation slice, [#26](https://github.com/micknudsen/oncohawk/issues/26), moves selection and top-level publication to root `main.nf`, with workflow implementations under `workflows/` and selected configuration under `conf/`. It removes the former standalone pipeline entrypoints. Omitted and explicit `oncohawk` selection share the alignment path; reference preparation remains explicit; unknown names and deferred knowledge preparation fail before tasks or unrelated input validation.
+
+This slice deliberately retains flat BAM/index publication and default `alignments`, while reference preparation retains its default `reference` destination and bundle format. The sample-first `results` layout accepted in Q4 is delivered by #27; enabled diagnostic placement follows in #28. This staged implementation does not revise the final design or introduce deferred analysis features. Required CI and acceptance evidence must be checked on the corresponding PR; this checkpoint makes no new validation or merge claim.
 
 ## Deferred
 

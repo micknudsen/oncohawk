@@ -1,6 +1,6 @@
 # Prepare an alignment reference bundle
 
-The reference-preparation entry point, `nextflow run pipelines/reference`, validates reference inputs, decompresses a gzipped FASTA, hard-masks BED intervals with `N`, and builds bwa-mem2 indexes from that exact masked sequence. It publishes the reusable bundle after successful validation and tool execution. Knowledge compilation and sample alignment are outside this entry point.
+The reference-preparation entry point, `nextflow run . --workflow prepare_reference_bundle`, validates reference inputs, decompresses a gzipped FASTA, hard-masks BED intervals with `N`, and builds bwa-mem2 indexes from that exact masked sequence. It publishes the reusable bundle after successful validation and tool execution. This selection runs only reference preparation; it needs no sample sheet and does not run analysis. Selecting `prepare_knowledge_bundle` instead fails immediately because knowledge compilation is deferred. Replace `.` with the checkout path to launch from another directory; relative input and output paths resolve from the launch directory.
 
 ## Runtime pins
 
@@ -43,7 +43,7 @@ Input filenames may contain letters, digits, dots, underscores, and hyphens; par
 Both the default NCBI sources and custom HTTP, HTTPS, or FTP URLs go through the observable `REFERENCE_DOWNLOAD` task. URLs are passed as values, so Nextflow does not stage them remotely first. Local files bypass this store entirely and are neither copied into it nor modified. The launcher resolves `--downloads_dir` to an absolute filesystem path; use an absolute path when sharing a store across launch directories:
 
 ```bash
-nextflow run pipelines/reference -profile docker \
+nextflow run . --workflow prepare_reference_bundle -profile docker \
   --downloads_dir /path/to/persistent/downloads \
   --outdir /path/to/new-bundle
 ```
@@ -97,7 +97,7 @@ with gzip.open(example / 'small.fa.gz', 'wt') as handle:
     handle.write('>chr1\nACGTACGTACGTACGTACGT\n>chr2\nTTTTCCCCAAAAGGGG\n')
 (example / 'exclusions.bed').write_text('chr1\t4\t8\nchr2\t0\t2\n')
 PY
-nextflow run pipelines/reference -profile docker,test \
+nextflow run . --workflow prepare_reference_bundle -profile docker,test \
   --fasta .local/reference-example/small.fa.gz \
   --exclusions_bed .local/reference-example/exclusions.bed \
   --outdir .local/reference-example/bundle
@@ -121,14 +121,14 @@ The subsequent proxy-casing correction passed 17 targeted tests: 14 download-job
 
 ## Production with SLURM and Apptainer
 
-Copy [conf/site.example.config](../conf/site.example.config) to a local site configuration, then replace its partition, optional account, and shared paths. The submission host and compute nodes must see the work directory, download store, input files, output destination, and Apptainer cache. The shared site file contains no process-name selectors. The `slurm` profile automatically loads [reference process allocations](../pipelines/reference/resources.config). These are starting allocations, not measured cluster requirements. To customize them, copy that resource file and pass it as a second configuration file; keep it specific to reference preparation.
+Copy [conf/site.example.config](../conf/site.example.config) to a local site configuration, then replace its partition, optional account, and shared paths. The submission host and compute nodes must see the work directory, download store, input files, output destination, and Apptainer cache. The shared site file contains no process-name selectors. For the selected reference workflow, the `slurm` profile automatically loads [reference process allocations](../conf/prepare_reference_bundle_resources.config). These are starting allocations, not measured cluster requirements. To customize them, copy that resource file and pass it as a second configuration file; keep it specific to reference preparation.
 
 ```bash
 mkdir -p .local
 cp conf/site.example.config .local/site.config
-cp pipelines/reference/resources.config .local/reference-resources.config
+cp conf/prepare_reference_bundle_resources.config .local/reference-resources.config
 # Edit the shared site settings and reference resource allocations for your cluster.
-nextflow run pipelines/reference -profile slurm -c .local/site.config,.local/reference-resources.config \
+nextflow run . --workflow prepare_reference_bundle -profile slurm -c .local/site.config,.local/reference-resources.config \
   --downloads_dir /shared/PROJECT/oncohawk/downloads \
   --outdir /shared/PROJECT/oncohawk/bundles/grch38-no-alt
 ```
@@ -151,4 +151,4 @@ reference/
 └── bundle.json
 ```
 
-`bundle.json` starts with `bundle_format_version: 1`, identifying the format of the entire reference bundle, followed by relative `fasta` and `bwamem2_index` paths, SHA256 artifact checksums, source URIs and checksums under `sources.fasta` and `sources.exclusions_bed`, sequence lengths, omitted BED entries, tool/module versions, and workflow identity/source hashes. Source hashes use repository-relative paths and cover reference-preparation sources and shared files used by preparation, excluding alignment-only sources. The repository commit is recorded separately. The index path is a prefix; all five index files accompany it. Keep the manifest and artifacts together when moving a bundle. A process failure is a failed preparation, not a completed bundle; inspect the Nextflow task log before retrying into a new output destination.
+`bundle.json` starts with `bundle_format_version: 1`, identifying the format of the entire reference bundle, followed by relative `fasta` and `bwamem2_index` paths, SHA256 artifact checksums, source URIs and checksums under `sources.fasta` and `sources.exclusions_bed`, sequence lengths, omitted BED entries, tool/module versions, and workflow identity/source hashes. Source hashes use repository-relative paths and cover reference-preparation sources and shared files used by preparation, including the root dispatcher and configuration. Analysis-only and knowledge-only workflow/configuration sources are excluded; changing them does not change the reference source-hash inventory or values. The repository commit is recorded separately. The index path is a prefix; all five index files accompany it. Keep the manifest and artifacts together when moving a bundle. A process failure is a failed preparation, not a completed bundle; inspect the Nextflow task log before retrying into a new output destination.

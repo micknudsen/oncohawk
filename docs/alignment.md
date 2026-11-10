@@ -1,6 +1,8 @@
 # Align samples from paired FASTQs
 
-The public `pipelines/alignment` entry point accepts a [prepared reference bundle](reference-bundle.md) and a sample sheet with one row per gzipped FASTQ pair. It applies shared Cutadapt adapter removal and length filtering, maps each pair with bwa-mem2, and combines rows into one coordinate-sorted, indexed BAM per sample. Duplicate detection considers all lanes of each library together, keeps distinct libraries separate, and retains duplicate records with their flags set.
+The Oncohawk workflow, selected by `nextflow run .` or explicitly by `nextflow run . --workflow oncohawk`, accepts a [prepared reference bundle](reference-bundle.md) and a sample sheet with one row per gzipped FASTQ pair. It applies shared Cutadapt adapter removal and length filtering, maps each pair with bwa-mem2, and combines rows into one coordinate-sorted, indexed BAM per sample. Duplicate detection considers all lanes of each library together, keeps distinct libraries separate, and retains duplicate records with their flags set.
+
+It consumes the prepared reference bundle without running bundle preparation, and it requires no knowledge bundle for this alignment milestone. Relative paths passed to `--input`, `--reference_bundle`, and `--outdir` resolve from the launch directory; paths within the sample sheet follow the rule below. Replace `.` with the checkout path when launching outside it.
 
 ## Sample sheet
 
@@ -58,7 +60,7 @@ CUTADAPT and BWAMEM2_MEM task labels use `sample / library / flowcell / lane / <
 Use the [pinned development runtimes](reference-bundle.md#runtime-pins) and a running Docker installation. Prepare a compact bundle and matching gzipped read pairs, then run from the checkout:
 
 ```bash
-nextflow run pipelines/alignment -profile docker,test \
+nextflow run . -profile docker,test \
   --input /path/to/samples.csv \
   --reference_bundle /path/to/prepared-bundle \
   --outdir /path/to/new-alignments
@@ -78,7 +80,7 @@ Coordinate-sorted row BAMs are grouped by sample and passed to samtools merge in
 
 ## Outputs and failures
 
-The default output directory is `alignments`; use `--outdir` to choose a different fresh destination.
+The default output directory is `alignments`; use `--outdir` to choose a different fresh destination. This flat layout is retained during dispatcher issue [#26](https://github.com/micknudsen/oncohawk/issues/26). The accepted switch to `results/samples/<sample>/alignments/` belongs to [#27](https://github.com/micknudsen/oncohawk/issues/27); execution-diagnostic placement belongs to [#28](https://github.com/micknudsen/oncohawk/issues/28).
 
 For the two samples in the example, successful completion publishes exactly one BAM and index per sample:
 
@@ -100,14 +102,14 @@ Tool logs and Picard duplicate metrics remain in task work directories. Add `-wi
 
 ## Production with SLURM and Apptainer
 
-Copy [the site example](../conf/site.example.config) and replace its queue/account and shared paths. This file contains only shared cluster settings. The `slurm` profile automatically loads [alignment process allocations](../pipelines/alignment/resources.config); copy these separately to customize CPU, memory, and time. Allocations for `CUTADAPT`, `BWAMEM2_MEM`, `SAMTOOLS_MERGE`, `PICARD_MARKDUPLICATES`, and `SAMTOOLS_INDEX` are illustrative, not measured requirements. Inputs, the reference bundle, work directory, output directory, and Apptainer cache must be accessible to the submission host and compute nodes.
+Copy [the site example](../conf/site.example.config) and replace its queue/account and shared paths. This file contains only shared cluster settings. For the selected Oncohawk workflow, the `slurm` profile automatically loads [alignment process allocations](../conf/oncohawk_resources.config); copy these separately to customize CPU, memory, and time. Allocations for `CUTADAPT`, `BWAMEM2_MEM`, `SAMTOOLS_MERGE`, `PICARD_MARKDUPLICATES`, and `SAMTOOLS_INDEX` are illustrative, not measured requirements. Inputs, the reference bundle, work directory, output directory, and Apptainer cache must be accessible to the submission host and compute nodes.
 
 ```bash
 mkdir -p .local
 cp conf/site.example.config .local/site.config
-cp pipelines/alignment/resources.config .local/alignment-resources.config
+cp conf/oncohawk_resources.config .local/alignment-resources.config
 # Edit the shared site settings and alignment resource allocations for your cluster.
-nextflow run pipelines/alignment -profile slurm -c .local/site.config,.local/alignment-resources.config \
+nextflow run . -profile slurm -c .local/site.config,.local/alignment-resources.config \
   --input /shared/PROJECT/samples.csv \
   --reference_bundle /shared/PROJECT/bundles/grch38-no-alt \
   --outdir /shared/PROJECT/alignments/run-001

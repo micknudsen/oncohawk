@@ -4,7 +4,7 @@ Fresh design session started 2026-11-01. This file records the restart brief and
 
 Q1–Q8 and the execution-environment clarification establish the agreed milestone scope. The [implementation plan](implementation-plan.md) proposes the build sequence and acceptance checks for review.
 
-The [public workflow architecture review](design.md#public-workflow-architecture-review--2026-11-10), confirmed on 2026-11-10, updates the required entrypoints and output organization below. At the design checkpoint, the migration was accepted but implementation had not been authorized or started. Later that day, the user authorized sequential implementation, PR creation, correction of CI failures, and merging after all CI tests pass. The existing pipeline directories remain the runnable interfaces until the dispatcher migration is completed.
+The [public workflow architecture review](design.md#public-workflow-architecture-review--2026-11-10), confirmed on 2026-11-10, updates the required entrypoints and output organization below. At the design checkpoint, the migration was accepted but implementation had not been authorized or started. Later that day, the user authorized sequential implementation, PR creation, correction of CI failures, and merging after all CI tests pass. The first implementation slice, [#26](https://github.com/micknudsen/oncohawk/issues/26), replaces the pipeline-directory interfaces with the root dispatcher while temporarily retaining flat BAM/index publication under `alignments`. The final output organization below remains the accepted requirement, delivered by #27 and #28.
 
 The implementation-ready architecture specification is [GitHub issue #25](https://github.com/micknudsen/oncohawk/issues/25).
 

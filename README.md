@@ -14,7 +14,19 @@ python3 -m unittest discover -s tests -v
 
 These tests run real reference preparation, alignment, and their composition with Docker through the public workflow interfaces. The `docker,test` profiles limit execution to compact fixtures; full-human-reference runs belong on the production cluster.
 
-Each pipeline has its own entrypoint and process configuration under `pipelines/`; modules and execution-environment settings are shared. Default output directories are `reference` and `alignments`, respectively. Override either with `--outdir`.
+Launch the repository root with `nextflow run .`. Each invocation selects one workflow:
+
+| Selection | Behavior | Default output directory |
+| --- | --- | --- |
+| Omit `--workflow`, or use `--workflow oncohawk` | Align the sample sheet against an existing reference bundle. | `alignments` |
+| `--workflow prepare_reference_bundle` | Prepare a reusable reference bundle explicitly. | `reference` |
+| `--workflow prepare_knowledge_bundle` | Fail immediately with a not-yet-implemented error. | None |
+
+Unknown workflow names fail before tasks start. Analysis requires no knowledge bundle and does not prepare missing bundles automatically. Override the selected output root with `--outdir`; relative paths resolve from the launch directory. To launch elsewhere, replace `.` with the checkout path.
+
+Root `main.nf` owns selection and publication; implementations live in `workflows/`. Root `nextflow.config` loads shared and selected-workflow settings from `conf/`, preserving process-selector isolation. Modules remain shared. The former `pipelines/reference` and `pipelines/alignment` entrypoints are removed.
+
+This dispatcher migration ([#26](https://github.com/micknudsen/oncohawk/issues/26)) temporarily retains flat analysis BAM/index publication under `alignments`. The accepted sample-first `results/samples/<sample>/alignments/` layout and `results/execution/` diagnostic placement follow in [#27](https://github.com/micknudsen/oncohawk/issues/27) and [#28](https://github.com/micknudsen/oncohawk/issues/28).
 
 Reference URLs use a persistent, integrity-checked download store, defaulting to `downloads` in the launch directory. Set `--downloads_dir /persistent/path` to share it across runs independently of Nextflow work directories and `-resume`. See [persistent downloads](docs/reference-bundle.md#persistent-downloads) for integrity, concurrency, and cluster setup.
 
@@ -23,7 +35,7 @@ Before the first official pipeline release, every commit may break functionality
 Prepare a bundle from your own small fixture:
 
 ```bash
-nextflow run pipelines/reference -profile docker,test \
+nextflow run . --workflow prepare_reference_bundle -profile docker,test \
   --fasta /path/to/small.fa.gz \
   --exclusions_bed /path/to/exclusions.bed \
   --outdir /path/to/new-bundle
@@ -32,7 +44,7 @@ nextflow run pipelines/reference -profile docker,test \
 Align small paired-end fixtures against that prepared bundle:
 
 ```bash
-nextflow run pipelines/alignment -profile docker,test \
+nextflow run . -profile docker,test \
   --input /path/to/samples.csv \
   --reference_bundle /path/to/new-bundle \
   --outdir /path/to/new-alignments

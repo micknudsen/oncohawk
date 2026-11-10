@@ -1,8 +1,8 @@
-include { CUTADAPT } from '../../modules/nf-core/cutadapt/main'
-include { BWAMEM2_MEM } from '../../modules/nf-core/bwamem2/mem/main'
-include { SAMTOOLS_MERGE } from '../../modules/nf-core/samtools/merge/main'
-include { PICARD_MARKDUPLICATES } from '../../modules/nf-core/picard/markduplicates/main'
-include { SAMTOOLS_INDEX } from '../../modules/nf-core/samtools/index/main'
+include { CUTADAPT } from '../modules/nf-core/cutadapt/main'
+include { BWAMEM2_MEM } from '../modules/nf-core/bwamem2/mem/main'
+include { SAMTOOLS_MERGE } from '../modules/nf-core/samtools/merge/main'
+include { PICARD_MARKDUPLICATES } from '../modules/nf-core/picard/markduplicates/main'
+include { SAMTOOLS_INDEX } from '../modules/nf-core/samtools/index/main'
 
 def inputOptions(value, row_number) {
     def options = [:]
@@ -127,7 +127,7 @@ def sampleInputs(table, sheet) {
     }
 }
 
-workflow {
+workflow ONCOHAWK {
     main:
     if (!params.input || !params.reference_bundle)
         error('Alignment requires --input and --reference_bundle')
@@ -151,14 +151,6 @@ workflow {
     SAMTOOLS_INDEX(PICARD_MARKDUPLICATES.out.bam)
     completed = PICARD_MARKDUPLICATES.out.bam.join(SAMTOOLS_INDEX.out.index)
 
-    publish:
+    emit:
     samples = completed
-}
-
-output {
-    samples {
-        path '.'
-        mode 'copy'
-        overwrite false
-    }
 }
