@@ -29,3 +29,31 @@ This establishes a concrete explanation for the reported timing but does not
 measure its contribution on the cluster or exclude other startup costs such as
 container acquisition. No pipeline behavior was changed and no cluster run was
 performed.
+
+## Implementation follow-up — 2026-11-11
+
+The investigation above describes the baseline behavior at `1dac7a3`. The accepted
+policy and implementation scope are tracked in issues
+[#33](https://github.com/micknudsen/oncohawk/issues/33) and
+[#34](https://github.com/micknudsen/oncohawk/issues/34). Documentation PR
+[#35](https://github.com/micknudsen/oncohawk/pull/35) passed required CI and was
+merged before implementation began.
+
+Implementation PR [#36](https://github.com/micknudsen/oncohawk/pull/36) makes
+artifact hashing conditional on `--verify_bundle_checksums`, defaulting to off.
+Seven focused public-workflow tests passed locally, including a permission-denial
+test demonstrating that default startup does not open artifact contents. They
+also cover explicit false, malformed manifests, missing artifacts, valid full
+verification, and per-artifact corruption on resume. The initial default/false
+regression failed against the old unconditional hashing before the change.
+Nextflow lint reported no errors, all 55 pinned nf-core files matched upstream,
+and both standards and specification review reported no findings.
+
+At this checkpoint, the full local suite was still running. The first PR #36 CI
+run, [43091806584](https://github.com/micknudsen/oncohawk/actions/runs/43091806584),
+reported successful test, module-verification, cleanup, and Complete job steps,
+but its overall job and required check remained in progress. Normal and force
+cancellation reported it was not running, while rerun requests were rejected.
+This documentation update triggers a fresh check; those successful steps alone
+were not treated as a completed merge gate. No cluster performance claim follows
+from the local tests or the CI step results.
