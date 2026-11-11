@@ -68,7 +68,23 @@ nextflow run . -profile docker,test \
 
 `--reference_bundle` points to the directory containing `bundle.json`, `reference.fa`, and its bwa-mem2 indexes. `--outdir` must be a fresh output directory. The Docker profile selects `linux/amd64` containers, including on Apple Silicon; the test profile limits local execution to two CPUs and 4 GiB total task memory. Use compact references locally and full-human-reference inputs on the production cluster.
 
-Before processing reads, alignment validates bundle format version 1 and streams SHA256 checks of the FASTA and all five index files against the manifest. These checks run once on the submission host, without loading entire files into memory, and reject altered or incomplete bundles.
+Before processing reads, alignment validates the bundle manifest's structure,
+supported format version 1, artifact paths, and required checksum entries. It
+checks that the FASTA and all five index files exist as regular files. Normal
+startup does not read artifact contents or calculate checksums. Sample-sheet and
+FASTQ path checks also complete before Cutadapt submission; they do not validate
+FASTQ contents.
+
+Add `--verify_bundle_checksums` to an `oncohawk` run to verify SHA-256 checksums
+of the FASTA and all five index files against the manifest before processing
+reads. The option defaults to off; `--verify_bundle_checksums false` explicitly
+keeps lightweight validation. Verification streams one file at a time in the
+Nextflow launcher on the submission host, with bounded memory, once per invocation
+including `-resume`. It is outside individual SLURM task resource allocations.
+Any checksum mismatch fails before Cutadapt starts; successful verification
+continues into analysis. Default validation does not detect artifact-content
+corruption, although downstream tools may reject corrupt inputs. Reference
+preparation still generates the bundle's checksums in both cases.
 
 Every pair passes through the same pristine Cutadapt step. Supplied sequences are [regular 3′ adapters](https://cutadapt.readthedocs.io/en/v5.2/guide.html#regular-3-adapters) for the corresponding mate: a full internal match removes the adapter and following sequence, and a partial match at the read's end can also be removed. Cutadapt's default matching rules apply. Adapters are never inferred automatically, and an unconfigured mate receives no adapter removal.
 

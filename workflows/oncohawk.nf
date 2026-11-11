@@ -36,7 +36,7 @@ def fastqInput(value, sheet, field, row_number) {
     return path
 }
 
-def alignmentReference(value) {
+def alignmentReference(value, verify_checksums) {
     def root = file(value, checkIfExists: true)
     def manifest = root.resolve('bundle.json')
     if (!manifest.isFile())
@@ -54,12 +54,14 @@ def alignmentReference(value) {
         def path = root.resolve(relative)
         if (!path.isFile())
             error("Reference-bundle artifact missing: ${relative}")
-        def digest = java.security.MessageDigest.getInstance('SHA-256')
-        new java.security.DigestInputStream(path.newInputStream(), digest).withCloseable { stream ->
-            stream.transferTo(java.io.OutputStream.nullOutputStream())
+        if (verify_checksums) {
+            def digest = java.security.MessageDigest.getInstance('SHA-256')
+            new java.security.DigestInputStream(path.newInputStream(), digest).withCloseable { stream ->
+                stream.transferTo(java.io.OutputStream.nullOutputStream())
+            }
+            if (digest.digest().encodeHex().toString() != bundle.checksums[relative])
+                error("Reference-bundle checksum mismatch: ${relative}")
         }
-        if (digest.digest().encodeHex().toString() != bundle.checksums[relative])
-            error("Reference-bundle checksum mismatch: ${relative}")
     }
     return [root.resolve('reference.fa'), root.resolve('bwamem2')]
 }
@@ -136,7 +138,7 @@ workflow ONCOHAWK {
         error('Invalid internal output-directory state; do not override _oncohawk_output_path')
     if (output_path != workflow.outputDir)
         error('Analysis output selection must use --outdir; do not override native outputDir or -output-dir')
-    reference = alignmentReference(params.reference_bundle)
+    reference = alignmentReference(params.reference_bundle, params.verify_bundle_checksums.toString().toBoolean())
     sheet = file(params.input, checkIfExists: true)
     inputs = channel.of(sheet)
         .splitCsv(quote: '"').toList()
