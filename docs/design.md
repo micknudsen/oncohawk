@@ -234,6 +234,80 @@ The first implementation slice, [#26](https://github.com/micknudsen/oncohawk/iss
 
 This slice deliberately retains flat BAM/index publication and default `alignments`, while reference preparation retains its default `reference` destination and bundle format. The sample-first `results` layout accepted in Q4 is delivered by #27; enabled diagnostic placement follows in #28. This staged implementation does not revise the final design or introduce deferred analysis features. Required CI and acceptance evidence must be checked on the corresponding PR; this checkpoint makes no new validation or merge claim.
 
+## Bundle validation during analysis — 2026-11-11
+
+### Q1 — Everyday validation
+
+**Status: accepted on 2026-11-11; design decision only, not implemented.**
+
+Normal analysis runs check the bundle manifest's structure and supported format
+version and confirm that required artifact files exist. They do not read artifact
+contents or calculate artifact checksums during startup. Missing required files
+must still fail before processing reads. Full integrity verification requires an
+explicit action, selected through the flag accepted in Q2 below.
+
+This revises the current implementation's unconditional reference FASTA and
+BWA-MEM2 index hashing before Cutadapt. The observed submission-host CPU and I/O
+cost and code inspection are recorded in
+[the startup investigation](research/2026-11-11-alignment-startup-checksums.md).
+Existing FASTQ path and metadata checks remain applicable. This decision does
+not introduce a knowledge-bundle requirement for the alignment milestone.
+
+### Q2 — Explicit checksum verification
+
+**Status: accepted on 2026-11-11; design decision only, not implemented.**
+
+The `--verify_bundle_checksums` flag enables full integrity verification before
+an `oncohawk` run continues to processing reads. It defaults to off. When enabled,
+verify all required bundle artifacts against their manifest checksums and fail
+on any mismatch.
+
+### Q3 — Verification execution location
+
+**Status: accepted on 2026-11-11; design decision only, not implemented.**
+
+Keep optional checksum verification in the Nextflow launcher on the submission
+host for now. Stream one artifact at a time, retaining the current bounded-memory,
+sequential approach. The user considers this acceptable for explicitly requested
+verification. Do not introduce a separate executor-managed verification task.
+When requested, verification runs once per invocation, including resumed runs,
+and must succeed before read-processing tasks can start.
+
+### Shared-understanding checkpoint
+
+**Status: accepted on 2026-11-11; final shared understanding confirmed. Implementation has not been authorized.**
+
+The implementation should make artifact-content verification conditional on
+`--verify_bundle_checksums`, defaulting to off, while preserving manifest checks,
+required-file checks, and sample-sheet/FASTQ path validation. Keep the reference
+bundle format and preparation-time checksum generation unchanged. The current
+alignment milestone consumes only the reference bundle; this change does not
+add knowledge-bundle functionality.
+
+Acceptance checks should establish that default startup performs no artifact
+content reads for validation; malformed or unsupported manifests and missing
+required artifacts still fail before read processing; and explicit verification
+accepts valid artifacts and rejects checksum mismatches before Cutadapt starts.
+Update the current corruption regression and operator documentation to describe
+both modes. A normal run is not expected to detect content corruption during
+startup; downstream tools may still reject corrupt inputs.
+
+The user confirmed the combined design on 2026-11-11, completing this design
+interview. Implementation requires a separate instruction.
+
+The synthesized specification is published as
+[GitHub issue #33](https://github.com/micknudsen/oncohawk/issues/33), labeled
+`ready-for-agent`. The user also confirmed the existing public alignment-workflow
+acceptance tests as the testing seam on 2026-11-11. Publication does not authorize
+implementation.
+
+On 2026-11-11, the user approved one complete implementation slice for this
+specification. It is published as
+[sub-issue #34](https://github.com/micknudsen/oncohawk/issues/34), labeled
+`ready-for-agent`, with no blockers. The single PR should deliver both validation
+modes, public-workflow tests, and operator documentation together. No prerequisite
+refactor is needed. Ticket publication does not authorize implementation.
+
 ## Deferred
 
 Knowledge compilation, variant calling, variant reconciliation, annotation, reporting, and their resources remain outside this milestone.
