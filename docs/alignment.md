@@ -68,6 +68,14 @@ nextflow run . -profile docker,test \
 
 `--reference_bundle` points to the directory containing `bundle.json`, `reference.fa`, and its bwa-mem2 indexes. `--outdir` must be a fresh output directory. The Docker profile selects `linux/amd64` containers, including on Apple Silicon; the test profile limits local execution to two CPUs and 4 GiB total task memory. Use compact references locally and full-human-reference inputs on the production cluster.
 
+Analysis accepts only `workflow`, `input`, `reference_bundle`,
+`verify_bundle_checksums`, and `outdir` as pipeline parameter names. Unsupported
+names, including reference-preparation parameters, fail before input processing
+or task submission. The [strict parameter policy](../README.md) also covers
+parameter/configuration files and previously ignored custom parameters. Use
+`-profile` with one dash to select a Nextflow profile; `--profile` fails with a
+correction. Existing output-directory protection can report an error first.
+
 Before processing reads, alignment validates the bundle manifest's structure,
 supported format version 1, artifact paths, and required checksum entries. It
 checks that the FASTA and all five index files exist as regular files. Normal

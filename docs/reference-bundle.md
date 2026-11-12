@@ -14,6 +14,13 @@ Required CI checks every installed module file against its pinned upstream Git o
 
 ## Inputs and masking
 
+Reference preparation accepts only the pipeline parameter names below plus
+`workflow`. Analysis-only parameters such as `input`, `reference_bundle`, and
+`verify_bundle_checksums` are rejected before input processing or task submission.
+The [strict parameter policy](../README.md) applies to CLI, parameter files, and
+configuration files, including previously ignored custom parameters. Select a
+Nextflow profile with `-profile` (one dash); `--profile` fails with a correction.
+
 | Parameter | Meaning |
 | --- | --- |
 | `--fasta` | Local `.fa`/`.fa.gz` or a downloadable FASTA URL. Defaults to the selected NCBI no-ALT analysis set below. |

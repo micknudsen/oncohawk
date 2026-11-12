@@ -24,6 +24,25 @@ Launch the repository root with `nextflow run .`. Each invocation selects one wo
 
 Unknown workflow names fail before tasks start. Analysis requires no knowledge bundle and does not prepare missing bundles automatically. Override the selected output root with `--outdir`; relative paths resolve from the launch directory. To launch elsewhere, replace `.` with the checkout path.
 
+Pipeline parameter names are strict: unsupported names fail together before input
+processing or task submission. This applies to command-line arguments,
+`-params-file` files, and `params` in configuration files, including `-c` additions
+and `-C` replacements that include the project configuration. Previously ignored
+custom pipeline parameters now fail. Existing output-directory protection can
+report an error first.
+
+Use double dashes for pipeline parameters (`--workflow`, `--outdir`, `--input`)
+and a single dash for native Nextflow options: **`-profile slurm`**, not
+`--profile slurm`. Native options such as `-c`, `-C`, `-resume`, and diagnostic
+flags retain their normal behavior.
+
+Supported names depend on the selected workflow. Both implemented workflows
+accept `workflow` and `outdir`. Analysis additionally accepts `input`,
+`reference_bundle`, and `verify_bundle_checksums`; reference preparation accepts
+the [reference input, download, checksum, and source-identity parameters](docs/reference-bundle.md#inputs-and-masking).
+Parameters belonging only to the other workflow are rejected. Knowledge-bundle
+selection retains its not-yet-implemented diagnostic.
+
 Root `main.nf` owns selection and publication; implementations live in `workflows/`. Root `nextflow.config` loads shared and selected-workflow settings from `conf/`, preserving process-selector isolation. Modules remain shared. The former `pipelines/reference` and `pipelines/alignment` entrypoints are removed.
 
 Analysis publishes `<sample>.bam` and `<sample>.bam.bai` under `results/samples/<sample>/alignments/`. An `--outdir` override replaces only `results`, retaining that sample layout and the filenames. Native trace, execution report, timeline, and DAG diagnostics remain opt-in and, when enabled, go under `<outdir>/execution/`. An ordinary invocation creates no diagnostics or empty execution, variant, or report directories. See [execution diagnostics](docs/alignment.md#execution-diagnostics) for commands and output protection.
