@@ -308,6 +308,14 @@ specification. It is published as
 modes, public-workflow tests, and operator documentation together. No prerequisite
 refactor is needed. Ticket publication does not authorize implementation.
 
+Later on 2026-11-11, the user authorized a documentation PR merged after passing
+CI, followed by implementation of #34 with the implement skill and a separate
+PR merged after passing CI. The documentation PR is
+[#35](https://github.com/micknudsen/oncohawk/pull/35), merged as `3db405b` after
+the required Tests and validation check passed. This subsequent authorization
+supersedes the earlier implementation-authorization checkpoint without changing
+the accepted design.
+
 ## Deferred
 
 Knowledge compilation, variant calling, variant reconciliation, annotation, reporting, and their resources remain outside this milestone.

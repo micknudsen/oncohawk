@@ -816,26 +816,131 @@ class AlignmentTests(unittest.TestCase):
         self.assertFalse((self.output / "samples/S1/alignments/S1.bam").exists())
         self.assertFalse((self.output / "samples/S1/alignments/S1.bam.bai").exists())
 
-    def test_rejects_unsupported_or_corrupt_reference_bundle(self):
+    def test_skips_reference_checksums_by_default_or_when_explicitly_disabled(self):
+        pairs = [("known", self.chr1[100:200], reverse_complement(self.chr1[300:400]))]
+        self.reads(pairs)
+        self.samples()
+        self.bundle = Path(shutil.copytree(self.bundle, self.directory / "bundle"))
+        manifest_path = self.bundle / "bundle.json"
+        manifest = json.loads(manifest_path.read_text())
+        # Keep usable reference bytes while making every recorded digest disagree.
+        manifest["checksums"] = {path: "0" * 64 for path in manifest["checksums"]}
+        manifest_path.write_text(json.dumps(manifest))
+        for label, arguments in [("default", []), ("false", ["--verify_bundle_checksums", "false"])]:
+            with self.subTest(mode=label):
+                self.output = self.directory / label
+                result = self.align(arguments=arguments)
+                self.assertEqual(result.returncode, 0, result.stdout)
+                self.assert_sample_tree(["S1"])
+                self.assert_bam_pairs(pairs)
+
+    def test_default_bundle_validation_does_not_open_artifact_contents(self):
+        self.bundle = Path(shutil.copytree(self.bundle, self.directory / "bundle"))
+        manifest = json.loads((self.bundle / "bundle.json").read_text())
+        artifacts = [self.bundle / relative for relative in manifest["checksums"]]
+        modes = {path: path.stat().st_mode for path in artifacts}
+        try:
+            for path in artifacts:
+                path.chmod(0)
+                if os.access(path, os.R_OK):
+                    self.skipTest("Launcher can bypass file permissions; cannot observe content-read denial")
+                with self.assertRaises(PermissionError):
+                    path.open("rb")
+            # Stop at the next public input boundary, before downstream tools need
+            # the reference. Any attempted launcher content read must fail first.
+            missing_sheet = self.directory / "missing.csv"
+            for arguments in [[], ["--verify_bundle_checksums", "false"]]:
+                with self.subTest(arguments=arguments):
+                    result = self.align(arguments=[*arguments, "--input", str(missing_sheet)])
+                    self.assertNotEqual(result.returncode, 0, result.stdout)
+                    self.assertIn(f"No such file or directory: {missing_sheet}", result.stdout)
+                    self.assertNotIn("Submitted process", result.stdout)
+            result = self.align(arguments=["--verify_bundle_checksums", "--input", str(missing_sheet)])
+            self.assertNotEqual(result.returncode, 0, result.stdout)
+            self.assertIn("reference.fa", result.stdout)
+            self.assertNotIn(f"No such file or directory: {missing_sheet}", result.stdout)
+            self.assertNotIn("Submitted process", result.stdout)
+        finally:
+            for path, mode in modes.items():
+                path.chmod(mode)
+
+    def test_rejects_invalid_reference_manifests_in_both_modes(self):
         self.reads([("known", self.chr1[100:200], reverse_complement(self.chr1[300:400]))])
         self.samples()
         self.bundle = Path(shutil.copytree(self.bundle, self.directory / "bundle"))
         manifest_path = self.bundle / "bundle.json"
         manifest = json.loads(manifest_path.read_text())
-        manifest["bundle_format_version"] = 99
-        manifest_path.write_text(json.dumps(manifest))
-        result = self.align()
-        self.assertNotEqual(result.returncode, 0, result.stdout)
-        self.assertIn("Unsupported reference-bundle bundle_format_version", result.stdout)
-        self.assertFalse((self.output / "samples/S1/alignments/S1.bam").exists())
-        manifest["bundle_format_version"] = 1
-        manifest_path.write_text(json.dumps(manifest))
-        with (self.bundle / "reference.fa").open("a") as handle:
-            handle.write("A\n")
-        result = self.align()
-        self.assertNotEqual(result.returncode, 0, result.stdout)
-        self.assertIn("Reference-bundle checksum mismatch: reference.fa", result.stdout)
-        self.assertFalse((self.output / "samples/S1/alignments/S1.bam").exists())
+        invalid = [
+            ("malformed JSON", "{", None),
+            ("non-object", "[]", "Unsupported reference-bundle bundle_format_version"),
+            ("unsupported version", json.dumps(dict(manifest, bundle_format_version=99)),
+             "Unsupported reference-bundle bundle_format_version"),
+            ("artifact paths", json.dumps(dict(manifest, fasta="elsewhere.fa")),
+             "Reference-bundle artifact paths do not match"),
+            ("checksum entries", json.dumps(dict(manifest, checksums={})),
+             "Reference bundle must checksum its FASTA and all five bwa-mem2 indexes"),
+            ("missing manifest", None, "Reference bundle must contain bundle.json"),
+        ]
+        for arguments in [[], ["--verify_bundle_checksums"]]:
+            for label, content, message in invalid:
+                with self.subTest(mode=arguments, manifest=label):
+                    if content is None:
+                        manifest_path.unlink()
+                    else:
+                        manifest_path.write_text(content)
+                    result = self.align(arguments=arguments)
+                    self.assertNotEqual(result.returncode, 0, result.stdout)
+                    if message:
+                        self.assertIn(message, result.stdout)
+                    self.assertNotIn("Submitted process", result.stdout)
+                    self.assertFalse((self.output / "samples/S1/alignments/S1.bam").exists())
+
+    def test_rejects_missing_reference_artifacts_in_both_modes(self):
+        self.reads([("known", self.chr1[100:200], reverse_complement(self.chr1[300:400]))])
+        self.samples()
+        self.bundle = Path(shutil.copytree(self.bundle, self.directory / "bundle"))
+        manifest = json.loads((self.bundle / "bundle.json").read_text())
+        for relative in manifest["checksums"]:
+            path = self.bundle / relative
+            backup = path.with_name(path.name + ".missing")
+            path.rename(backup)
+            try:
+                for arguments in [[], ["--verify_bundle_checksums"]]:
+                    with self.subTest(artifact=relative, mode=arguments):
+                        result = self.align(arguments=arguments)
+                        self.assertNotEqual(result.returncode, 0, result.stdout)
+                        self.assertIn(f"Reference-bundle artifact missing: {relative}", result.stdout)
+                        self.assertNotIn("Submitted process", result.stdout)
+            finally:
+                backup.rename(path)
+
+    def test_verifies_all_reference_artifacts_including_on_resume(self):
+        pairs = [("known", self.chr1[100:200], reverse_complement(self.chr1[300:400]))]
+        self.reads(pairs)
+        self.samples()
+        self.bundle = Path(shutil.copytree(self.bundle, self.directory / "bundle"))
+        result = self.align(arguments=["--verify_bundle_checksums"])
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assert_sample_tree(["S1"])
+        self.assert_bam_pairs(pairs)
+        manifest = json.loads((self.bundle / "bundle.json").read_text())
+        for index, relative in enumerate(manifest["checksums"]):
+            with self.subTest(artifact=relative):
+                path = self.bundle / relative
+                original_size = path.stat().st_size
+                with path.open("ab") as handle:
+                    handle.write(b"corruption")
+                try:
+                    # A fresh output root respects the existing output contract;
+                    # the same launch directory retains the completed run cache.
+                    result = self.align(outdir=self.directory / f"resumed-{index}",
+                                        arguments=["-resume", "--verify_bundle_checksums"])
+                    self.assertNotEqual(result.returncode, 0, result.stdout)
+                    self.assertIn(f"Reference-bundle checksum mismatch: {relative}", result.stdout)
+                    self.assertNotIn("Submitted process", result.stdout)
+                finally:
+                    with path.open("r+b") as handle:
+                        handle.truncate(original_size)
 
     def test_preserves_existing_output_directory(self):
         self.reads([("known", self.chr1[100:200], reverse_complement(self.chr1[300:400]))])
