@@ -69,12 +69,15 @@ class PipelineConfigurationTests(unittest.TestCase):
                             self.assertIn(f"params.outdir = '{expected}'", result.stdout)
                         if profile == "slurm":
                             self.assertIn("process.executor = 'slurm'", result.stdout)
+                            self.assertIn("process.maxRetries = 1", result.stdout)
+                            self.assertIn("process.maxErrors = -1", result.stdout)
+                            self.assertNotIn("process.resourceLimits =", result.stdout)
                             self.assertIn("apptainer.enabled = true", result.stdout)
                             self.assertIn("process.queue = 'REPLACE_WITH_PARTITION'", result.stdout)
                             if selected != "prepare_knowledge_bundle":
                                 process = "BWAMEM2_INDEX" if selected == "prepare_reference_bundle" else "BWAMEM2_MEM"
-                                memory = "128 GB" if selected == "prepare_reference_bundle" else "64 GB"
-                                self.assertIn(f"process.'withName:{process}'.memory = '{memory}'", result.stdout)
+                                # Runtime resource probes verify resolved attempt-specific values.
+                                self.assertIn(f"process.'withName:{process}'.memory =", result.stdout)
                         else:
                             self.assertIn("docker.enabled = true", result.stdout)
                             self.assertIn("process.maxForks = 1", result.stdout)

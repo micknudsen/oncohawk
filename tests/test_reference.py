@@ -117,12 +117,12 @@ class ReferencePreparationTests(unittest.TestCase):
         return context, certificates / "ca.pem"
 
     def prepare(self, *arguments, launch_directory=None, default_output=False, project=PROJECT,
-                environment=None):
+                environment=None, profile="docker,test"):
         self.run_count += 1
         run_number = self.run_count
         command = [
             os.environ.get("NEXTFLOW", "nextflow"), "run", str(project), "--workflow", "prepare_reference_bundle",
-            "-profile", "docker,test",
+            "-profile", profile,
             "-c", str(self.http_config),
             "-with-trace", str(self.directory / f"trace-{run_number}.tsv"),
             "--fasta", str(self.fasta), "--exclusions_bed", str(self.bed),
@@ -193,6 +193,37 @@ class ReferencePreparationTests(unittest.TestCase):
             self.assertEqual(hashlib.sha256((PROJECT / source).read_bytes()).hexdigest(), checksum)
         for artifact, checksum in manifest["checksums"].items():
             self.assertFalse(Path(artifact).is_absolute())
+            self.assertEqual(hashlib.sha256((self.bundle / artifact).read_bytes()).hexdigest(), checksum)
+
+    def test_slurm_policy_recovers_reference_preparation_with_native_caps(self):
+        self.http_config.write_text(
+            "process.executor = 'local'\n"
+            "apptainer.enabled = false\n"
+            "docker.enabled = true\n"
+            "docker.runOptions = '--platform=linux/amd64'\n"
+            "docker.fixOwnership = true\n"
+            "process.resourceLimits = [cpus: 1, memory: 1.GB, time: 10.min]\n"
+            "process { withName: REFERENCE_VALIDATE {\n"
+            "  beforeScript = { \"printf 'RETRY\\t${task.attempt}\\t${task.cpus}\\t${task.memory.toBytes()}\\t${task.time.toMillis()}\\n'; "
+            "if [ ${task.attempt} -eq 1 ]; then exit 143; fi\" }\n"
+            "} }\n"
+        )
+        result = self.prepare(profile="slurm")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        with (self.directory / f"trace-{self.run_count}.tsv").open() as handle:
+            tasks = [row for row in csv.DictReader(handle, delimiter="\t")
+                     if ':REFERENCE_VALIDATE (' in row['name']]
+        self.assertCountEqual([row['status'] for row in tasks], ['FAILED', 'COMPLETED'])
+        observed = []
+        for output in (self.directory / 'work').glob('*/*/.command.log'):
+            observed.extend(line for line in output.read_text().splitlines() if line.startswith('RETRY\t'))
+        self.assertCountEqual(observed, ['RETRY\t1\t1\t1073741824\t600000',
+                                         'RETRY\t2\t1\t1073741824\t600000'])
+        manifest = json.loads((self.bundle / 'bundle.json').read_text())
+        self.assertEqual(manifest['bundle_format_version'], 1)
+        self.assertEqual((self.bundle / 'reference.fa').read_text(),
+                         '>chr1\nACGTNNNNACGTACGTACGT\n>chr2\nNNTTCCCCAAAAGGGG\n')
+        for artifact, checksum in manifest['checksums'].items():
             self.assertEqual(hashlib.sha256((self.bundle / artifact).read_bytes()).hexdigest(), checksum)
 
     def assert_reference_labels(self, label, downloads=False, compressed=True):

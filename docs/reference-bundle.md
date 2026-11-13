@@ -128,6 +128,8 @@ The subsequent proxy-casing correction passed 17 targeted tests: 14 download-job
 
 ## Production with SLURM and Apptainer
 
+The SLURM profile enables [community-style resource retries](resource-retries.md): one retry with growing resource requests, optional native caps, and standard configuration overrides. First-attempt allocations remain unchanged; ordinary local Docker behavior is unchanged.
+
 Copy [conf/site.example.config](../conf/site.example.config) to a local site configuration, then replace its partition, optional account, and shared paths. The submission host and compute nodes must see the work directory, download store, input files, output destination, and Apptainer cache. The shared site file contains no process-name selectors. For the selected reference workflow, the `slurm` profile automatically loads [reference process allocations](../conf/prepare_reference_bundle_resources.config). These are starting allocations, not measured cluster requirements. To customize them, copy that resource file and pass it as a second configuration file; keep it specific to reference preparation.
 
 ```bash

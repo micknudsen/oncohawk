@@ -176,6 +176,8 @@ This check also applies to read-only `nextflow config` inspection. Inspect analy
 
 ## Production with SLURM and Apptainer
 
+The SLURM profile enables [community-style resource retries](resource-retries.md): one retry with growing resource requests, optional native caps, and standard configuration overrides. First-attempt allocations remain unchanged; ordinary local Docker behavior is unchanged.
+
 Copy [the site example](../conf/site.example.config) and replace its queue/account and shared paths. This file contains only shared cluster settings. For the selected Oncohawk workflow, the `slurm` profile automatically loads [alignment process allocations](../conf/oncohawk_resources.config); copy these separately to customize CPU, memory, and time. Allocations for `CUTADAPT`, `BWAMEM2_MEM`, `SAMTOOLS_MERGE`, `PICARD_MARKDUPLICATES`, and `SAMTOOLS_INDEX` are illustrative, not measured requirements. Inputs, the reference bundle, work directory, output directory, and Apptainer cache must be accessible to the submission host and compute nodes.
 
 ```bash

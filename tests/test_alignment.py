@@ -78,7 +78,7 @@ class AlignmentTests(unittest.TestCase):
             writer.writerows(rows)
 
     def align(self, launch_directory=None, default_output=False, workflow=None, config=None, trace=False,
-              diagnostics=False, outdir=None, config_mode="-c", arguments=()):
+              diagnostics=False, outdir=None, config_mode="-c", arguments=(), profile="docker,test"):
         self.run_count += 1
         diagnostic_flags = (["-with-trace", "trace.tsv", "-with-report", "report.html",
                              "-with-timeline", "timeline.html", "-with-dag", "dag.html"]
@@ -88,7 +88,7 @@ class AlignmentTests(unittest.TestCase):
         result = subprocess.run([
             os.environ.get("NEXTFLOW", "nextflow"),
             *([config_mode, str(config)] if config else []), "run", str(PROJECT),
-            "-profile", "docker,test",
+            "-profile", profile,
             *diagnostic_flags,
             "--reference_bundle", str(self.bundle), "--input", str(self.sheet),
             *(["--outdir", str(outdir if outdir is not None else self.output)] if not default_output else []),
@@ -318,6 +318,43 @@ class AlignmentTests(unittest.TestCase):
             self.assertEqual(mapper["memory"], "1 GB")
             self.assertFalse((self.directory / "reference").exists())
         self.assertEqual(observed[0], observed[1])
+
+    def test_slurm_policy_recovers_two_independently_failing_samples(self):
+        pairs = [("pair", self.chr1[100:200], reverse_complement(self.chr1[300:400]))]
+        rows = []
+        for sample in ['S1', 'S2']:
+            self.r1 = self.directory / f'{sample}_R1.fastq.gz'
+            self.r2 = self.directory / f'{sample}_R2.fastq.gz'
+            self.reads(pairs)
+            rows.append(dict(sample=sample, library='L1', flowcell='FC1', lane='1',
+                             fastq_1=str(self.r1), fastq_2=str(self.r2)))
+        self.sample_rows(rows)
+        recovery = self.directory / 'recovery.config'
+        recovery.write_text(
+            "process.executor = 'local'\n"
+            "apptainer.enabled = false\n"
+            "docker.enabled = true\n"
+            "docker.runOptions = '--platform=linux/amd64'\n"
+            "docker.fixOwnership = true\n"
+            "process.resourceLimits = [cpus: 2, memory: 1.GB, time: 10.min]\n"
+            "process { withName: BWAMEM2_MEM {\n"
+            "  beforeScript = { \"printf 'RETRY\\t${meta.sample}\\t${task.attempt}\\t${task.cpus}\\t${task.memory.toBytes()}\\t${task.time.toMillis()}\\n'; "
+            "if [ ${task.attempt} -eq 1 ]; then exit 143; fi\" }\n"
+            "} }\n"
+        )
+        result = self.align(config=recovery, trace=True, profile='slurm')
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assert_sample_tree(['S1', 'S2'], ['trace.tsv'])
+        for sample in ['S1', 'S2']:
+            self.assert_bam_pairs(pairs, sample=sample)
+        with (self.output / 'execution/trace.tsv').open() as handle:
+            tasks = [row for row in csv.DictReader(handle, delimiter='\t') if ':BWAMEM2_MEM (' in row['name']]
+        self.assertCountEqual([row['status'] for row in tasks], ['FAILED', 'COMPLETED', 'FAILED', 'COMPLETED'])
+        observed = []
+        for output in (self.directory / 'work').glob('*/*/.command.log'):
+            observed.extend(line for line in output.read_text().splitlines() if line.startswith('RETRY\t'))
+        self.assertCountEqual(observed, [f'RETRY\t{sample}\t{attempt}\t2\t1073741824\t600000'
+                                         for sample in ['S1', 'S2'] for attempt in [1, 2]])
 
     def test_completed_sample_remains_published_when_another_index_task_fails(self):
         pairs = [("pair", self.chr1[100:200], reverse_complement(self.chr1[300:400]))]
