@@ -55,7 +55,7 @@ class ResourceRetryTests(unittest.TestCase):
                 val kind
                 script:
                 """
-                echo 'RESOURCE\\t{name}\\t${{task.attempt}}\\t${{task.cpus}}\\t${{task.memory.toBytes()}}\\t${{task.time.toMillis()}}'
+                printf 'RESOURCE\\t{name}\\t${{task.attempt}}\\t${{task.cpus}}\\t${{task.memory.toBytes()}}\\t${{task.time.toMillis()}}\\n'
                 {body}
                 """
             }}''')
