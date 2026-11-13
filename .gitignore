@@ -1,5 +1,6 @@
 # Local session prompt and notes
 /.local/
+/.scratch/
 /.nextflow*
 /work/
 /reference/
