@@ -4,7 +4,7 @@ The reference-preparation entry point, `nextflow run . --workflow prepare_refere
 
 ## Runtime pins
 
-Use Java **21.0.13+9** and [Nextflow **26.10.5**](https://github.com/nextflow-io/nextflow/releases/tag/v26.10.5). The standalone release asset `nextflow-26.10.5-dist` has SHA256 `b030030c06040bf5f13ac423c318d146c95e8d1d82f5022799dcb24738bccf3e`; the required CI workflow verifies this digest before execution. Python **3.12** runs the standard-library acceptance tests. Docker supplies local task execution; production requires SLURM and Apptainer.
+Use Java **21.0.13+9** and [Nextflow **26.10.6**](https://github.com/nextflow-io/nextflow/releases/tag/v26.10.6). The standalone release asset `nextflow-26.10.6-dist` has SHA256 `80e5332f37cd9a3b328fb843271209e090d91a7813f238e92f4efe3b5ee5d8d9`; the required CI workflow verifies this digest before execution. Python **3.12** runs the standard-library acceptance tests. Docker supplies local task execution; production requires SLURM and Apptainer.
 
 The modules were installed with nf-core CLI **4.2.1** at upstream revision `20c6e6407f63748003b47f92837b64fb0a53ffa4`, recorded in [modules.json](../modules.json). `gunzip`, `bedtools/maskfasta`, and `bwamem2/index` remain unchanged, including their upstream container pins. Actual Docker execution reported gzip **1.13**, bedtools **2.31.1**, and bwa-mem2 **2.2.1**. The upstream bwa-mem2 Conda environment declares 2.3, but that environment is not executed: Conda is unsupported. The manifest records executed versions rather than inferring them from unused environment metadata.
 
