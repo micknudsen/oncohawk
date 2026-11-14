@@ -172,7 +172,7 @@ class ReferencePreparationTests(unittest.TestCase):
         self.assertEqual(manifest["sources"]["fasta"]["uri"], str(self.fasta))
         self.assertEqual(manifest["sources"]["fasta"]["sha256"], hashlib.sha256(self.fasta.read_bytes()).hexdigest())
         self.assertEqual(manifest["sources"]["exclusions_bed"]["sha256"], hashlib.sha256(self.bed.read_bytes()).hexdigest())
-        self.assertEqual(manifest["workflow"]["nextflow"], "26.10.5")
+        self.assertEqual(manifest["workflow"]["nextflow"], "26.10.6")
         self.assertEqual({entry["tool"] for entry in manifest["tools"]}, {"gunzip", "bedtools", "bwamem2"})
         self.assertTrue(all(entry["version"] for entry in manifest["tools"]))
         self.assertEqual(set(manifest["modules"]), {"gunzip", "bedtools/maskfasta", "bwamem2/index"})
