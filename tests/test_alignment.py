@@ -183,7 +183,7 @@ class AlignmentTests(unittest.TestCase):
             if start <= 1500 < start + len(fragment):
                 offset = 1500 - start
                 fragment = fragment[:offset] + alternate + fragment[offset + 1:]
-            pairs.append((f"germline{number}", fragment[:150], reverse_complement(fragment[-150:])))
+            pairs.append((f"low_quality{number}", fragment[:150], reverse_complement(fragment[-150:])))
         self.reads(pairs)
         # Q19 passes caller base admission but fails the default median-quality filter.
         for path in [self.r1, self.r2]:
@@ -405,8 +405,8 @@ class AlignmentTests(unittest.TestCase):
                 trace = list(csv.DictReader(handle, delimiter="\t"))
             self.assertTrue(trace)
             self.assertTrue(all(task["name"].startswith("ONCOHAWK:") for task in trace))
-        for process in ["GATK4_MUTECT2", "GATK4_FILTERMUTECTCALLS"]:
-            self.assertTrue(any(f":{process} (S1)" in task["name"] for task in trace))
+            for process in ["GATK4_MUTECT2", "GATK4_FILTERMUTECTCALLS"]:
+                self.assertTrue(any(f":{process} (S1)" in task["name"] for task in trace))
             mapper = next(task for task in trace if ":BWAMEM2_MEM (" in task["name"])
             self.assertEqual(mapper["cpus"], "2")
             self.assertEqual(mapper["memory"], "1 GB")
