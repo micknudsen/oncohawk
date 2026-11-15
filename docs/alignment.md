@@ -108,6 +108,10 @@ Each completed duplicate-marked BAM/index feeds the pristine nf-core `gatk4/mute
 
 Calling and filtering use tool defaults with required input/output wiring. No germline resource, panel of normals, known-sites/hotspot dataset, contamination estimation, orientation-bias model, BQSR, or custom filtering thresholds are added. The VCF retains every final called record with its FILTER labels, including failed filters; no PASS-only file is generated. PASS means the candidate passed these tool filters. Tumor-only calls can include germline variants and artifacts and are **not confirmed somatic variants**.
 
+The two GATK tasks use native Nextflow task-local scratch. GATK 4.7.0.0's [temporary-directory conversion](https://github.com/broadinstitute/gatk/blob/4.7.0.0/src/main/java/org/broadinstitute/hellbender/utils/io/IOUtils.java#L825) percent-encodes spaces while setting `java.io.tmpdir`, breaking temporary codec-resource extraction under a spaced task work path. Scratch keeps the pristine modules' `--tmp-dir .` local to the temporary task directory while Nextflow stages inputs and copies completed outputs back to the work directory. User launch/output directories may still contain spaces.
+
+The execution environment's temporary/scratch root must be writable, have sufficient capacity for GATK temporary data and staged outputs, and use a path without spaces or other URI-escaped characters. `scratch = true` uses Nextflow's native temporary-directory selection; a site-specific `scratch` selector may choose an appropriate node-local location. A custom `TMPDIR` containing spaces can reproduce the upstream problem. This is per-task runtime configuration, not a scientific calling/filtering option.
+
 GATK tasks appear in enabled diagnostics. Resource overrides use `GATK4_MUTECT2` and `GATK4_FILTERMUTECTCALLS` selectors in the existing analysis configuration. SLURM defaults are starting allocations, not full-reference measurements; the existing bounded retry policy applies. No new public workflow or BAM-input mode is introduced.
 
 ## Outputs and failures

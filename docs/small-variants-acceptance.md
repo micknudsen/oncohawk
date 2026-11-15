@@ -23,4 +23,6 @@ The four added modules were installed with nf-core CLI 4.2.1 at upstream revisio
 
 The Q19 fixture uses real paired FASTQs, alignment, calling and default filtering. No caller output or FILTER label is injected. The positive fixture asserts independent planted truth, and both fixtures query final tabix indexes. PASS records are tumor-only candidates; they are not confirmed somatic variants.
 
+An initial full local run exposed the upstream GATK temporary-directory conversion defect in the retained spaced-launch regression. Per-task native scratch was added through configuration. Both additive/replacement site configurations and relative/symlinked output paths then passed the unchanged public regression (83 s); both independent review axes found no issues in this correction. The earlier run was stopped after this known failure, and a complete corrected run was started.
+
 Full local suite and required Linux CI results will be recorded after execution. Full-human-reference and SLURM/Apptainer runs remain informal operator checks and are not claimed by this record.
