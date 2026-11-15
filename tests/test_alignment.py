@@ -106,7 +106,7 @@ class AlignmentTests(unittest.TestCase):
             "-v", f"{self.output}:/data:ro", SAMTOOLS, "samtools", *arguments,
         ], text=True)
 
-    def assert_sample_tree(self, samples, diagnostics=()):
+    def assert_sample_tree(self, samples, diagnostics=(), variants=True):
         expected = ["samples"]
         if diagnostics:
             expected.extend(["execution", *[f"execution/{name}" for name in diagnostics]])
@@ -116,6 +116,9 @@ class AlignmentTests(unittest.TestCase):
                 f"samples/{sample}/alignments/{sample}.bam",
                 f"samples/{sample}/alignments/{sample}.bam.bai",
             ])
+            if variants:
+                expected.extend([f"samples/{sample}/variants", f"samples/{sample}/variants/{sample}.vcf.gz",
+                                 f"samples/{sample}/variants/{sample}.vcf.gz.tbi"])
         self.assertEqual(sorted(str(path.relative_to(self.output)) for path in self.output.rglob("*")),
                          sorted(expected))
 
@@ -133,6 +136,89 @@ class AlignmentTests(unittest.TestCase):
         self.assertEqual(observed, {(name, mate): sequence
                                     for name, first, second in expected
                                     for mate, sequence in [(1, first), (2, second)]})
+
+    def test_calls_planted_snv_and_insertion_with_readable_regional_index(self):
+        generator = random.Random(314159)
+        pairs = []
+        for site, inserted in [(1500, ""), (2500, "AC")]:
+            for number in range(500):
+                start = site - generator.randrange(310)
+                length = generator.randrange(230, 380)
+                fragment = self.chr1[start:start + length]
+                if number % 4 == 0 and start <= site < start + length:
+                    offset = site - start
+                    if inserted:
+                        fragment = fragment[:offset + 1] + inserted + fragment[offset + 1:]
+                    else:
+                        alternate = "A" if self.chr1[site] != "A" else "C"
+                        fragment = fragment[:offset] + alternate + fragment[offset + 1:]
+                pairs.append((f"site{site}_{number}", fragment[:150], reverse_complement(fragment[-150:])))
+        self.reads(pairs)
+        self.samples()
+        result = self.align()
+        self.assertEqual(result.returncode, 0, result.stdout)
+        vcf = self.output / "samples/S1/variants/S1.vcf.gz"
+        with gzip.open(vcf, "rt") as handle:
+            lines = handle.read().splitlines()
+        header = next(line for line in lines if line.startswith("#CHROM"))
+        self.assertEqual(header.split("\t")[9:], ["S1"])
+        records = [line.split("\t") for line in lines if not line.startswith("#")]
+        observed = {(record[0], int(record[1]), record[3], record[4]): record[6] for record in records}
+        alternate = "A" if self.chr1[1500] != "A" else "C"
+        self.assertEqual(observed[("chr1", 1501, self.chr1[1500], alternate)], "PASS")
+        self.assertEqual(observed[("chr1", 2501, self.chr1[2500], self.chr1[2500] + "AC")], "PASS")
+        query = subprocess.check_output([
+            "docker", "run", "--rm", "--platform=linux/amd64", "-v", f"{self.output}:/data:ro",
+            SAMTOOLS, "tabix", "/data/samples/S1/variants/S1.vcf.gz", "chr1:1501-1501",
+        ], text=True)
+        self.assertEqual(query.split("\t")[:2], ["chr1", "1501"])
+
+    def test_retains_rejected_calls_and_isolates_a_no_call_sample(self):
+        generator = random.Random(161803)
+        pairs = []
+        alternate = "A" if self.chr1[1500] != "A" else "C"
+        for number in range(500):
+            start = 1500 - generator.randrange(310)
+            fragment = self.chr1[start:start + generator.randrange(230, 380)]
+            if start <= 1500 < start + len(fragment):
+                offset = 1500 - start
+                fragment = fragment[:offset] + alternate + fragment[offset + 1:]
+            pairs.append((f"germline{number}", fragment[:150], reverse_complement(fragment[-150:])))
+        self.reads(pairs)
+        # Q19 passes caller base admission but fails the default median-quality filter.
+        for path in [self.r1, self.r2]:
+            with gzip.open(path, "rt") as handle:
+                lines = handle.read().splitlines()
+            for index in range(3, len(lines), 4):
+                lines[index] = "4" * len(lines[index])
+            with gzip.open(path, "wt") as handle:
+                handle.write("\n".join(lines) + "\n")
+        rows = [dict(sample="Rejected", library="L1", flowcell="FC1", lane="1",
+                     fastq_1=str(self.r1), fastq_2=str(self.r2))]
+        self.r1 = self.directory / "clean_R1.fastq.gz"
+        self.r2 = self.directory / "clean_R2.fastq.gz"
+        self.reads([("clean", self.chr1[100:250], reverse_complement(self.chr1[350:500]))])
+        rows.append(dict(sample="Clean", library="L1", flowcell="FC1", lane="1",
+                         fastq_1=str(self.r1), fastq_2=str(self.r2)))
+        self.sample_rows(rows)
+        result = self.align()
+        self.assertEqual(result.returncode, 0, result.stdout)
+        for sample in ["Rejected", "Clean"]:
+            with gzip.open(self.output / f"samples/{sample}/variants/{sample}.vcf.gz", "rt") as handle:
+                lines = handle.read().splitlines()
+            self.assertEqual(next(line for line in lines if line.startswith("#CHROM")).split("\t")[9:], [sample])
+            records = [line.split("\t") for line in lines if not line.startswith("#")]
+            if sample == "Rejected":
+                record = next(record for record in records if record[1] == "1501")
+                self.assertEqual((record[3], record[4]), (self.chr1[1500], alternate))
+                self.assertIn("base_qual", record[6].split(";"))
+            else:
+                self.assertEqual(records, [])
+            query = subprocess.check_output([
+                "docker", "run", "--rm", "--platform=linux/amd64", "-v", f"{self.output}:/data:ro",
+                SAMTOOLS, "tabix", f"/data/samples/{sample}/variants/{sample}.vcf.gz", "chr1:1501-1501",
+            ], text=True)
+            self.assertEqual(bool(query), sample == "Rejected")
 
     def test_reference_to_bam_maps_known_pair_with_read_group(self):
         self.reads([("known", self.chr1[100:200], reverse_complement(self.chr1[300:400]))])
@@ -157,10 +243,7 @@ class AlignmentTests(unittest.TestCase):
         self.samples()
         result = self.align(default_output=True, trace=False)
         self.assertEqual(result.returncode, 0, result.stdout)
-        self.assertEqual(sorted(str(path.relative_to(self.output)) for path in self.output.rglob("*")), [
-            "samples", "samples/S1", "samples/S1/alignments",
-            "samples/S1/alignments/S1.bam", "samples/S1/alignments/S1.bam.bai",
-        ])
+        self.assert_sample_tree(["S1"])
         self.assert_bam_pairs([("pair", self.chr1[100:200], reverse_complement(self.chr1[300:400]))])
         self.assertEqual(len(self.samtools("view", "/data/samples/S1/alignments/S1.bam",
                                           "chr1:101-150").splitlines()), 1)
@@ -180,6 +263,8 @@ class AlignmentTests(unittest.TestCase):
             trace = list(csv.DictReader(handle, delimiter="\t"))
         self.assertTrue(trace)
         self.assertTrue(all(task["name"].startswith("ONCOHAWK:") for task in trace))
+        for process in ["GATK4_MUTECT2", "GATK4_FILTERMUTECTCALLS"]:
+            self.assertTrue(any(f":{process} (S1)" in task["name"] for task in trace))
         self.assertTrue(any("CUTADAPT (S1 / L1 / FC1 / 1 / " in task["name"] for task in trace))
         for name in ("report.html", "timeline.html", "dag.html"):
             content = (self.output / "execution" / name).read_text()
@@ -263,6 +348,13 @@ class AlignmentTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0, result.stdout)
         self.assertIn("Invalid internal output-directory state", result.stdout)
         self.assertNotIn("Submitted process", result.stdout)
+        for forged in [{"path": str(self.output)}, self.output.as_uri()]:
+            supplied.write_text(json.dumps({"_oncohawk_output_path": forged}))
+            result = self.align(arguments=["-params-file", str(supplied)])
+            self.assertNotEqual(result.returncode, 0, result.stdout)
+            self.assertIn("Invalid internal output-directory state", result.stdout)
+            self.assertNotIn("Submitted process", result.stdout)
+        supplied.write_text(json.dumps({"_oncohawk_output_path": str(self.output)}))
         self.output.mkdir()
         sentinel = self.output / "existing.txt"
         sentinel.write_text("preserved")
@@ -313,6 +405,8 @@ class AlignmentTests(unittest.TestCase):
                 trace = list(csv.DictReader(handle, delimiter="\t"))
             self.assertTrue(trace)
             self.assertTrue(all(task["name"].startswith("ONCOHAWK:") for task in trace))
+        for process in ["GATK4_MUTECT2", "GATK4_FILTERMUTECTCALLS"]:
+            self.assertTrue(any(f":{process} (S1)" in task["name"] for task in trace))
             mapper = next(task for task in trace if ":BWAMEM2_MEM (" in task["name"])
             self.assertEqual(mapper["cpus"], "2")
             self.assertEqual(mapper["memory"], "1 GB")
@@ -383,7 +477,7 @@ class AlignmentTests(unittest.TestCase):
         self.assert_bam_pairs(pairs, sample="S1")
         self.assertEqual(len(self.samtools("view", "/data/samples/S1/alignments/S1.bam",
                                           "chr1:101-150").splitlines()), 1)
-        self.assert_sample_tree(["S1"], ["trace.tsv", "report.html", "timeline.html", "dag.html"])
+        self.assert_sample_tree(["S1"], ["trace.tsv", "report.html", "timeline.html", "dag.html"], variants=False)
         self.assertTrue((self.output / "samples/S1/alignments/S1.bam.bai").is_file())
         self.assertFalse((self.output / "samples/S2/alignments/S2.bam").exists())
         self.assertFalse((self.output / "samples/S2/alignments/S2.bam.bai").exists())
@@ -391,6 +485,39 @@ class AlignmentTests(unittest.TestCase):
             trace = list(csv.DictReader(handle, delimiter="\t"))
         self.assertTrue(any(task["name"] == "ONCOHAWK:SAMTOOLS_INDEX (S2)" and task["status"] == "FAILED"
                             for task in trace))
+
+    def test_completed_variants_remain_usable_when_another_sample_filter_fails(self):
+        pairs = [("pair", self.chr1[100:250], reverse_complement(self.chr1[350:500]))]
+        rows = []
+        for sample in ["S1", "S2"]:
+            self.r1 = self.directory / f"{sample}_R1.fastq.gz"
+            self.r2 = self.directory / f"{sample}_R2.fastq.gz"
+            self.reads(pairs)
+            rows.append(dict(sample=sample, library="L1", flowcell="FC1", lane="1",
+                             fastq_1=str(self.r1), fastq_2=str(self.r2)))
+        self.sample_rows(rows)
+        failure = self.directory / "filter-failure.config"
+        failure.write_text("process { withName: GATK4_FILTERMUTECTCALLS {\n"
+                           "  maxForks = 2\n"
+                           "  beforeScript = { meta.sample == 'S2' ? \""
+                           "for attempt in {1..60}; do "
+                           f"if test -s '{self.output}/samples/S1/variants/S1.vcf.gz.tbi'; then exit 17; fi; "
+                           "sleep 1; done; exit 18\" : '' }\n"
+                           "} }\n")
+        result = self.align(config=failure)
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("Error executing process > 'ONCOHAWK:GATK4_FILTERMUTECTCALLS (S2)'", result.stdout)
+        self.assert_bam_pairs(pairs, sample="S1")
+        self.assert_bam_pairs(pairs, sample="S2")
+        self.assertFalse((self.output / "samples/S2/variants/S2.vcf.gz").exists())
+        with gzip.open(self.output / "samples/S1/variants/S1.vcf.gz", "rt") as handle:
+            lines = handle.read().splitlines()
+        self.assertEqual(next(line for line in lines if line.startswith("#CHROM")).split("\t")[9:], ["S1"])
+        query = subprocess.check_output([
+            "docker", "run", "--rm", "--platform=linux/amd64", "-v", f"{self.output}:/data:ro",
+            SAMTOOLS, "tabix", "/data/samples/S1/variants/S1.vcf.gz", "chr1:1-6000",
+        ], text=True)
+        self.assertEqual(query, "")
 
     def test_valid_sample_name_cannot_collide_with_internal_mapped_bam(self):
         self.reads([("known", self.chr1[100:200], reverse_complement(self.chr1[300:400]))])
@@ -714,6 +841,16 @@ class AlignmentTests(unittest.TestCase):
                 self.assertEqual(self.samtools("view", "-c", "/data/samples/S1/alignments/S1.bam").strip(), "0")
                 self.assertEqual(self.samtools("view", "/data/samples/S1/alignments/S1.bam", "chr1:1-6000"), "")
                 self.assertIn("\tSM:S1", self.samtools("view", "-H", "/data/samples/S1/alignments/S1.bam"))
+                self.assert_sample_tree(["S1"])
+                with gzip.open(self.output / "samples/S1/variants/S1.vcf.gz", "rt") as handle:
+                    lines = handle.read().splitlines()
+                self.assertEqual(next(line for line in lines if line.startswith("#CHROM")).split("\t")[9:], ["S1"])
+                self.assertFalse(any(not line.startswith("#") for line in lines))
+                query = subprocess.check_output([
+                    "docker", "run", "--rm", "--platform=linux/amd64", "-v", f"{self.output}:/data:ro",
+                    SAMTOOLS, "tabix", "/data/samples/S1/variants/S1.vcf.gz", "chr1:1-6000",
+                ], text=True)
+                self.assertEqual(query, "")
 
     def test_rejects_repeated_fastq_pairs(self):
         self.reads([("known", self.chr1[100:200], reverse_complement(self.chr1[300:400]))])
@@ -910,12 +1047,18 @@ class AlignmentTests(unittest.TestCase):
         invalid = [
             ("malformed JSON", "{", None),
             ("non-object", "[]", "Unsupported reference-bundle bundle_format_version"),
+            ("legacy version", json.dumps(dict(manifest, bundle_format_version=1)),
+             "Unsupported reference-bundle bundle_format_version"),
             ("unsupported version", json.dumps(dict(manifest, bundle_format_version=99)),
              "Unsupported reference-bundle bundle_format_version"),
             ("artifact paths", json.dumps(dict(manifest, fasta="elsewhere.fa")),
              "Reference-bundle artifact paths do not match"),
+            ("FASTA index path", json.dumps(dict(manifest, fasta_index="elsewhere.fai")),
+             "Reference-bundle artifact paths do not match"),
+            ("dictionary path", json.dumps(dict(manifest, sequence_dictionary="elsewhere.dict")),
+             "Reference-bundle artifact paths do not match"),
             ("checksum entries", json.dumps(dict(manifest, checksums={})),
-             "Reference bundle must checksum its FASTA and all five bwa-mem2 indexes"),
+             "Reference bundle must checksum its FASTA, FASTA index, sequence dictionary and all five bwa-mem2 indexes"),
             ("missing manifest", None, "Reference bundle must contain bundle.json"),
         ]
         for arguments in [[], ["--verify_bundle_checksums"]]:

@@ -2,6 +2,8 @@ include { CUTADAPT } from '../modules/nf-core/cutadapt/main'
 include { BWAMEM2_MEM } from '../modules/nf-core/bwamem2/mem/main'
 include { SAMTOOLS_MERGE } from '../modules/nf-core/samtools/merge/main'
 include { PICARD_MARKDUPLICATES } from '../modules/nf-core/picard/markduplicates/main'
+include { GATK4_MUTECT2 } from '../modules/nf-core/gatk4/mutect2/main'
+include { GATK4_FILTERMUTECTCALLS } from '../modules/nf-core/gatk4/filtermutectcalls/main'
 include { SAMTOOLS_INDEX } from '../modules/nf-core/samtools/index/main'
 
 def inputOptions(value, row_number) {
@@ -42,14 +44,15 @@ def alignmentReference(value, verify_checksums) {
     if (!manifest.isFile())
         error('Reference bundle must contain bundle.json')
     def bundle = new groovy.json.JsonSlurper().parseText(manifest.text)
-    if (!(bundle instanceof Map) || bundle.bundle_format_version != 1)
-        error('Unsupported reference-bundle bundle_format_version; expected 1')
-    if (bundle.fasta != 'reference.fa' || bundle.bwamem2_index != 'bwamem2/reference.fa')
-        error('Reference-bundle artifact paths do not match bundle_format_version 1')
-    def artifacts = ['reference.fa'] + ['.0123', '.amb', '.ann', '.bwt.2bit.64', '.pac']
+    if (!(bundle instanceof Map) || bundle.bundle_format_version != 2)
+        error('Unsupported reference-bundle bundle_format_version; expected 2')
+    if (bundle.fasta != 'reference.fa' || bundle.bwamem2_index != 'bwamem2/reference.fa' ||
+        bundle.fasta_index != 'reference.fa.fai' || bundle.sequence_dictionary != 'reference.dict')
+        error('Reference-bundle artifact paths do not match bundle_format_version 2')
+    def artifacts = ['reference.fa', 'reference.fa.fai', 'reference.dict'] + ['.0123', '.amb', '.ann', '.bwt.2bit.64', '.pac']
         .collect { suffix -> "bwamem2/reference.fa${suffix}".toString() }
     if (!(bundle.checksums instanceof Map) || bundle.checksums.keySet() != artifacts.toSet())
-        error('Reference bundle must checksum its FASTA and all five bwa-mem2 indexes')
+        error('Reference bundle must checksum its FASTA, FASTA index, sequence dictionary and all five bwa-mem2 indexes')
     artifacts.each { relative ->
         def path = root.resolve(relative)
         if (!path.isFile())
@@ -63,7 +66,8 @@ def alignmentReference(value, verify_checksums) {
                 error("Reference-bundle checksum mismatch: ${relative}")
         }
     }
-    return [root.resolve('reference.fa'), root.resolve('bwamem2')]
+    return [root.resolve('reference.fa'), root.resolve('bwamem2'),
+            root.resolve('reference.fa.fai'), root.resolve('reference.dict')]
 }
 
 def sampleInputs(table, sheet) {
@@ -134,9 +138,9 @@ workflow ONCOHAWK {
     if (!params.input || !params.reference_bundle)
         error('Alignment requires --input and --reference_bundle')
     output_path = params._oncohawk_output_path
-    if (!(output_path instanceof java.nio.file.Path))
+    if (!(output_path instanceof java.net.URI))
         error('Invalid internal output-directory state; do not override _oncohawk_output_path')
-    if (output_path != workflow.outputDir)
+    if (java.nio.file.Path.of(output_path) != workflow.outputDir)
         error('Analysis output selection must use --outdir; do not override native outputDir or -output-dir')
     reference = alignmentReference(params.reference_bundle, params.verify_bundle_checksums.toString().toBoolean())
     sheet = file(params.input, checkIfExists: true)
@@ -156,6 +160,19 @@ workflow ONCOHAWK {
     SAMTOOLS_INDEX(PICARD_MARKDUPLICATES.out.bam)
     completed = PICARD_MARKDUPLICATES.out.bam.join(SAMTOOLS_INDEX.out.index)
 
+    GATK4_MUTECT2(
+        completed.map { meta, bam, bai -> [meta, [bam], [bai], []] },
+        channel.value([[:], reference[0]]), channel.value([[:], reference[2], []]),
+        channel.value([[:], reference[3]]), [], [], [], [], [], []
+    )
+    calls = GATK4_MUTECT2.out.vcf.join(GATK4_MUTECT2.out.tbi).join(GATK4_MUTECT2.out.stats)
+    GATK4_FILTERMUTECTCALLS(
+        calls.map { meta, vcf, tbi, stats -> [meta, vcf, tbi, stats, [], [], [], 0] },
+        channel.value([[:], reference[0]]), channel.value([[:], reference[2]]),
+        channel.value([[:], reference[3]])
+    )
+
     emit:
     samples = completed
+    variants = GATK4_FILTERMUTECTCALLS.out.vcf.join(GATK4_FILTERMUTECTCALLS.out.tbi)
 }

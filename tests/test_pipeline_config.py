@@ -1,5 +1,6 @@
 """Check configuration isolation without requiring production cluster access."""
 
+import json
 import os
 from pathlib import Path
 import re
@@ -10,12 +11,23 @@ import unittest
 
 PROJECT = Path(__file__).resolve().parents[1]
 REFERENCE_PROCESSES = {"REFERENCE_DOWNLOAD", "GUNZIP", "REFERENCE_VALIDATE", "BEDTOOLS_MASKFASTA",
-                       "BWAMEM2_INDEX", "REFERENCE_BUNDLE"}
+                       "BWAMEM2_INDEX", "REFERENCE_BUNDLE", "SAMTOOLS_FAIDX", "PICARD_CREATESEQUENCEDICTIONARY"}
 ALIGNMENT_PROCESSES = {"CUTADAPT", "BWAMEM2_MEM", "SAMTOOLS_MERGE",
-                       "PICARD_MARKDUPLICATES", "SAMTOOLS_INDEX"}
+                       "PICARD_MARKDUPLICATES", "SAMTOOLS_INDEX", "GATK4_MUTECT2", "GATK4_FILTERMUTECTCALLS"}
 
 
 class PipelineConfigurationTests(unittest.TestCase):
+    def test_analysis_configuration_can_be_read_as_json_by_module_tools(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result = subprocess.run([
+                os.environ.get("NEXTFLOW", "nextflow"), "config", "-o", "json", str(PROJECT),
+            ], cwd=directory, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            self.assertEqual(result.returncode, 0, result.stdout)
+            config = json.loads(result.stdout)
+            self.assertEqual(config["manifest"]["name"], "micknudsen/oncohawk")
+            self.assertEqual(config["params"]["outdir"], "results")
+            self.assertFalse((Path(directory) / "results").exists())
+
     def test_local_container_pins_are_apptainer_compatible(self):
         for module in sorted((PROJECT / "modules/local").glob("*.nf")):
             with self.subTest(module=module.name):

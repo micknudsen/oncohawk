@@ -1,8 +1,8 @@
-# Align samples from paired FASTQs
+# Analyze samples from paired FASTQs
 
-The Oncohawk workflow, selected by `nextflow run .` or explicitly by `nextflow run . --workflow oncohawk`, accepts a [prepared reference bundle](reference-bundle.md) and a sample sheet with one row per gzipped FASTQ pair. It applies shared Cutadapt adapter removal and length filtering, maps each pair with bwa-mem2, and combines rows into one coordinate-sorted, indexed BAM per sample. Duplicate detection considers all lanes of each library together, keeps distinct libraries separate, and retains duplicate records with their flags set.
+The Oncohawk workflow, selected by `nextflow run .` or explicitly by `nextflow run . --workflow oncohawk`, accepts a [prepared reference bundle](reference-bundle.md) and a sample sheet with one row per gzipped FASTQ pair. It applies shared Cutadapt adapter removal and length filtering, maps each pair with bwa-mem2, and combines rows into one coordinate-sorted, indexed BAM per sample. Duplicate detection considers all lanes of each library together, keeps distinct libraries separate, and retains duplicate records with their flags set. It then runs tumor-only Mutect2 and FilterMutectCalls for each sample, retaining both PASS and rejected records in a compressed, indexed VCF.
 
-It consumes the prepared reference bundle without running bundle preparation, and it requires no knowledge bundle for this alignment milestone. Relative paths passed to `--input`, `--reference_bundle`, and `--outdir` resolve from the launch directory; paths within the sample sheet follow the rule below. Replace `.` with the checkout path when launching outside it.
+It consumes the prepared reference bundle without running bundle preparation, and it requires no knowledge bundle for this analysis. Relative paths passed to `--input`, `--reference_bundle`, and `--outdir` resolve from the launch directory; paths within the sample sheet follow the rule below. Replace `.` with the checkout path when launching outside it.
 
 ## Sample sheet
 
@@ -66,7 +66,7 @@ nextflow run . -profile docker,test \
   --outdir /path/to/new-results
 ```
 
-`--reference_bundle` points to the directory containing `bundle.json`, `reference.fa`, and its bwa-mem2 indexes. `--outdir` must be a fresh output directory. The Docker profile selects `linux/amd64` containers, including on Apple Silicon; the test profile limits local execution to two CPUs and 4 GiB total task memory. Use compact references locally and full-human-reference inputs on the production cluster.
+`--reference_bundle` points to the directory containing format-2 `bundle.json`, `reference.fa`, `reference.fa.fai`, `reference.dict`, and the bwa-mem2 indexes. `--outdir` must be a fresh output directory. The Docker profile selects `linux/amd64` containers, including on Apple Silicon; the test profile limits local execution to two CPUs and 4 GiB total task memory. Use compact references locally and full-human-reference inputs on the production cluster.
 
 Analysis accepts only `workflow`, `input`, `reference_bundle`,
 `verify_bundle_checksums`, and `outdir` as pipeline parameter names. Unsupported
@@ -77,14 +77,14 @@ parameter/configuration files and previously ignored custom parameters. Use
 correction. Existing output-directory protection can report an error first.
 
 Before processing reads, alignment validates the bundle manifest's structure,
-supported format version 1, artifact paths, and required checksum entries. It
-checks that the FASTA and all five index files exist as regular files. Normal
+supported format version 2, artifact paths, and required checksum entries. It
+checks that the FASTA, FASTA index, dictionary, and all five bwa-mem2 index files exist as regular files. Normal
 startup does not read artifact contents or calculate checksums. Sample-sheet and
 FASTQ path checks also complete before Cutadapt submission; they do not validate
 FASTQ contents.
 
 Add `--verify_bundle_checksums` to an `oncohawk` run to verify SHA-256 checksums
-of the FASTA and all five index files against the manifest before processing
+of the FASTA, FASTA index, dictionary, and all five bwa-mem2 index files against the manifest before processing
 reads. The option defaults to off; `--verify_bundle_checksums false` explicitly
 keeps lightweight validation. Verification streams one file at a time in the
 Nextflow launcher on the submission host, with bounded memory, once per invocation
@@ -102,32 +102,46 @@ bwa-mem2 receives the row's read group through `-R` and uses `-Y` supplementary 
 
 Coordinate-sorted row BAMs are grouped by sample and passed to samtools merge in a stable filename order. Its `-c` setting preserves the shared read-group ID for compatible chunks with identical definitions. Program records remain distinct; `-p` is not enabled. Picard then marks duplicates once per sample using the read groups' `LB` fields, before the final BAM is indexed. This combines lanes within a library without treating matching coordinates from different libraries as duplicates of each other.
 
+## Tumor-only small variants
+
+Each completed duplicate-marked BAM/index feeds the pristine nf-core `gatk4/mutect2` module, followed by `gatk4/filtermutectcalls`. Both use GATK **4.7.0.0**, pinned in the upstream modules installed through nf-core CLI **4.2.1** at `20c6e6407f63748003b47f92837b64fb0a53ffa4`. FilterMutectCalls receives the caller's statistics, VCF/index, and the same masked reference, FASTA index, and sequence dictionary. Its compressed output and tabix index form the final deliverable; calling/filtering statistics stay in task work directories.
+
+Calling and filtering use tool defaults with required input/output wiring. No germline resource, panel of normals, known-sites/hotspot dataset, contamination estimation, orientation-bias model, BQSR, or custom filtering thresholds are added. The VCF retains every final called record with its FILTER labels, including failed filters; no PASS-only file is generated. PASS means the candidate passed these tool filters. Tumor-only calls can include germline variants and artifacts and are **not confirmed somatic variants**.
+
+GATK tasks appear in enabled diagnostics. Resource overrides use `GATK4_MUTECT2` and `GATK4_FILTERMUTECTCALLS` selectors in the existing analysis configuration. SLURM defaults are starting allocations, not full-reference measurements; the existing bounded retry policy applies. No new public workflow or BAM-input mode is introduced.
+
 ## Outputs and failures
 
 The default output root is `results`; use `--outdir` to choose a different fresh destination. Relative overrides resolve from the launch directory. Quote paths containing spaces. Each sample's BAM and index are grouped under `samples/<sample>/alignments/`, retaining the sample ID in both filenames. An override changes only the root; it does not change the sample hierarchy. Existing output roots, including empty directories, are rejected before processing, preserving previous results.
 
-For the two samples in the example, successful completion publishes exactly one BAM and index per sample:
+For the two samples in the example, successful completion publishes one BAM/index and one VCF/index per sample:
 
 ```text
 results/
 └── samples/
     ├── S1/
-    │   └── alignments/
-    │       ├── S1.bam
-    │       └── S1.bam.bai
+    │   ├── alignments/
+    │   │   ├── S1.bam
+    │   │   └── S1.bam.bai
+    │   └── variants/
+    │       ├── S1.vcf.gz
+    │       └── S1.vcf.gz.tbi
     └── S2/
-        └── alignments/
-            ├── S2.bam
-            └── S2.bam.bai
+        ├── alignments/
+        │   ├── S2.bam
+        │   └── S2.bam.bai
+        └── variants/
+            ├── S2.vcf.gz
+            └── S2.vcf.gz.tbi
 ```
 
-For example, `--outdir /path/to/new-results` places S1's BAM at `/path/to/new-results/samples/S1/alignments/S1.bam`. No flat duplicate BAMs or empty variant/report directories are published. With diagnostics disabled, the tree above contains the entire published analysis output; there is no `execution` directory.
+For example, `--outdir /path/to/new-results` places S1's BAM at `/path/to/new-results/samples/S1/alignments/S1.bam`. No flat duplicate BAMs or empty report directories are published. With diagnostics disabled, the tree above contains the entire published analysis output; there is no `execution` directory.
 
 Each BAM is coordinate-sorted, contains only that sample's records, preserves its read-group headers and read tags, and retains duplicate reads with duplicate flags set. The final index supports regional BAM queries.
 
-If adapter removal and length filtering leave no pairs for a sample, successful completion still produces a valid header-only BAM and its index. The read-group headers are retained, and regional queries return no records. An empty row can also be combined with nonempty rows of the same sample. These empty results are distinct from a failed tool or invalid input.
+If adapter removal and length filtering leave no pairs for a sample, successful completion still produces a valid header-only BAM and its index. The read-group headers are retained, and regional queries return no records. Variant calling also produces a valid header-only VCF and tabix index for these no-call results. An empty row can also be combined with nonempty rows of the same sample. These empty results are distinct from a failed tool or invalid input.
 
-Native Nextflow workflow outputs publish each completed BAM and index after indexing succeeds. A failed preprocessing, mapping, merging, duplicate-marking, or indexing task fails the workflow instead of publishing that sample as completed. Other samples may already have completed; a failed run is not an atomic batch publication. Consult the reported task directory and its `.command.err`/`.command.out` files when diagnosing a failure.
+Native Nextflow workflow outputs publish each completed BAM and index after indexing succeeds. A failed preprocessing, mapping, merging, duplicate-marking, or indexing task fails the workflow instead of publishing that sample as completed. A caller/filter failure leaves an already published BAM/index intact. A VCF/index publishes only after filtering completes. Other samples may already have completed; a failed run is not an atomic batch publication. Consult the reported task directory and its `.command.err`/`.command.out` files when diagnosing a failure.
 
 Tool logs and Picard duplicate metrics remain in task work directories. Execution diagnostics are separate from the published BAM/index contract and use the native opt-in controls below.
 

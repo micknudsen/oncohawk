@@ -13,7 +13,7 @@ workflow {
         : ['fasta', 'exclusions_bed', 'downloads_dir', 'download_ca_bundle',
            'fasta_sha256', 'exclusions_bed_sha256', 'fasta_identity', 'exclusions_bed_identity'])
     if (params.workflow == 'oncohawk') {
-        if (!(params._oncohawk_output_path instanceof java.nio.file.Path))
+        if (!(params._oncohawk_output_path instanceof java.net.URI))
             error('Invalid internal output-directory state; do not override _oncohawk_output_path')
         supported += '_oncohawk_output_path'
     }
@@ -24,6 +24,7 @@ workflow {
     }
     reference = channel.empty()
     completed = channel.empty()
+    variants = channel.empty()
     if (params.workflow == 'prepare_reference_bundle') {
         PREPARE_REFERENCE_BUNDLE()
         reference = PREPARE_REFERENCE_BUNDLE.out.bundle.flatten()
@@ -31,11 +32,13 @@ workflow {
     if (params.workflow == 'oncohawk') {
         ONCOHAWK()
         completed = ONCOHAWK.out.samples
+        variants = ONCOHAWK.out.variants
     }
 
     publish:
     reference_bundle = reference
     samples = completed
+    small_variants = variants
 }
 
 output {
@@ -43,6 +46,11 @@ output {
         path { artifact ->
             artifact >> artifact.name
         }
+        mode 'copy'
+        overwrite false
+    }
+    small_variants {
+        path { meta, _vcf, _tbi -> "samples/${meta.sample}/variants/" }
         mode 'copy'
         overwrite false
     }

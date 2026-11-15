@@ -17,7 +17,7 @@ def checksum(path):
     return digest.hexdigest()
 
 
-fasta, index, validation, metadata, versions = sys.argv[1:]
+fasta, index, fai, dictionary, validation, metadata, versions = sys.argv[1:]
 metadata = json.loads(base64.b64decode(metadata))
 tools = json.loads(base64.b64decode(versions))
 bundle = Path("bundle")
@@ -25,9 +25,13 @@ bundle = Path("bundle")
 shutil.copyfile(fasta, bundle / "reference.fa")
 for path in Path(index).iterdir():
     shutil.copyfile(path, bundle / "bwamem2" / path.name)
+shutil.copyfile(fai, bundle / "reference.fa.fai")
+shutil.copyfile(dictionary, bundle / "reference.dict")
 report = json.loads(Path(validation).read_text())
 metadata.update({
     "fasta": "reference.fa",
+    "fasta_index": "reference.fa.fai",
+    "sequence_dictionary": "reference.dict",
     "bwamem2_index": "bwamem2/reference.fa",
     "omitted_exclusions_bed_entries": report["omitted_exclusions_bed_entries"],
     "contigs": report["contigs"],
@@ -38,5 +42,5 @@ metadata.update({
 })
 for key, checksums in report["sources"].items():
     metadata["sources"][key].update(checksums)
-manifest = {"bundle_format_version": 1, **metadata}
+manifest = {"bundle_format_version": 2, **metadata}
 (bundle / "bundle.json").write_text(json.dumps(manifest, indent=2) + "\n")

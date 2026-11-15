@@ -1,5 +1,7 @@
 include { GUNZIP } from '../modules/nf-core/gunzip/main'
 include { BEDTOOLS_MASKFASTA } from '../modules/nf-core/bedtools/maskfasta/main'
+include { SAMTOOLS_FAIDX } from '../modules/nf-core/samtools/faidx/main'
+include { PICARD_CREATESEQUENCEDICTIONARY } from '../modules/nf-core/picard/createsequencedictionary/main'
 include { BWAMEM2_INDEX } from '../modules/nf-core/bwamem2/index/main'
 include { REFERENCE_BUNDLE } from '../modules/local/reference_bundle'
 include { REFERENCE_VALIDATE } from '../modules/local/reference_validate'
@@ -106,15 +108,18 @@ workflow PREPARE_REFERENCE_BUNDLE {
         [[id: 'reference', reference_label: reference_label], path]
     }, REFERENCE_VALIDATE.out.fasta)
     BWAMEM2_INDEX(BEDTOOLS_MASKFASTA.out.fasta)
+    SAMTOOLS_FAIDX(BEDTOOLS_MASKFASTA.out.fasta.map { meta, path -> [meta, path, []] }, false)
+    PICARD_CREATESEQUENCEDICTIONARY(BEDTOOLS_MASKFASTA.out.fasta)
     modules = new groovy.json.JsonSlurper().parseText(file("$repository/modules.json").text)
     source_paths = [
         'main.nf', 'nextflow.config', 'workflows/prepare_reference_bundle.nf',
         'conf/prepare_reference_bundle.config', 'conf/prepare_reference_bundle_resources.config',
-        'conf/common.config', 'conf/slurm.config', 'modules.json',
+        'conf/common.config', 'conf/slurm.config',
         'bin/validate_reference.py', 'bin/package_reference.py', 'bin/download_reference.py',
         'modules/local/reference_validate.nf', 'modules/local/reference_bundle.nf', 'modules/local/reference_download.nf',
         'modules/nf-core/gunzip/main.nf', 'modules/nf-core/bedtools/maskfasta/main.nf',
-        'modules/nf-core/bwamem2/index/main.nf'
+        'modules/nf-core/bwamem2/index/main.nf',
+        'modules/nf-core/samtools/faidx/main.nf', 'modules/nf-core/picard/createsequencedictionary/main.nf'
     ]
     source_hashes = source_paths.collectMany { pattern -> files("$repository/$pattern") }
         .collectEntries { path ->
@@ -125,13 +130,16 @@ workflow PREPARE_REFERENCE_BUNDLE {
         workflow: [repository: workflow.manifest.name, version: workflow.manifest.version,
                    nextflow: nextflow.version.toString(), commit: workflow.commitId, source_sha256: source_hashes],
         modules: modules.repos['https://github.com/nf-core/modules.git'].modules['nf-core']
-            .subMap(['gunzip', 'bedtools/maskfasta', 'bwamem2/index'])
+            .subMap(['gunzip', 'bedtools/maskfasta', 'bwamem2/index', 'samtools/faidx', 'picard/createsequencedictionary'])
     ])
     versions = GUNZIP.out.versions_gunzip
-        .mix(BEDTOOLS_MASKFASTA.out.versions_bedtools, BWAMEM2_INDEX.out.versions_bwamem2)
+        .mix(BEDTOOLS_MASKFASTA.out.versions_bedtools, BWAMEM2_INDEX.out.versions_bwamem2,
+             SAMTOOLS_FAIDX.out.versions_samtools, PICARD_CREATESEQUENCEDICTIONARY.out.versions_picard)
         .collect(flat: false).map { entries -> encoded(entries) }
     REFERENCE_BUNDLE(
         BEDTOOLS_MASKFASTA.out.fasta.map { _meta, path -> path }, BWAMEM2_INDEX.out.index.map { _meta, path -> path },
+        SAMTOOLS_FAIDX.out.fai.map { _meta, path -> path },
+        PICARD_CREATESEQUENCEDICTIONARY.out.reference_dict.map { _meta, path -> path },
         REFERENCE_VALIDATE.out.report, metadata, versions, file("$repository/bin/package_reference.py"), reference_label
     )
 

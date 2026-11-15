@@ -1,8 +1,8 @@
 # Oncohawk
 
-Oncohawk is a Nextflow workflow for tumor-only short-read DNA WGS analysis. It prepares a reusable **reference bundle** and aligns gzipped FASTQ pairs to produce one coordinate-sorted, indexed BAM per sample with duplicates marked and retained. A sample sheet can combine multiple samples, libraries, lanes, and FASTQ chunks, with optional adapter settings for each mate in each row. Read groups are preserved, and duplicate detection combines lanes within each library while keeping distinct libraries separate. Downstream analysis remains deferred.
+Oncohawk is a Nextflow workflow for tumor-only short-read DNA WGS analysis. It prepares a reusable **reference bundle** and aligns gzipped FASTQ pairs to produce one coordinate-sorted, indexed BAM per sample with duplicates marked and retained. A sample sheet can combine multiple samples, libraries, lanes, and FASTQ chunks, with optional adapter settings for each mate in each row. Read groups are preserved, and duplicate detection combines lanes within each library while keeping distinct libraries separate. Default analysis continues through tumor-only Mutect2 and FilterMutectCalls, producing an indexed compressed SNV/INDEL VCF per sample with PASS and rejected records retained. Annotation, other variant classes, knowledge compilation, and reporting remain deferred.
 
-The [milestone 1 acceptance record](docs/milestone-1-acceptance.md) maps the original scope to tests and recorded results as of 2026-11-01. The [architecture migration acceptance record](docs/architecture-migration-acceptance.md) tracks the later shared entrypoint, sample layout, and execution diagnostics separately.
+The [small variant acceptance record](docs/small-variants-acceptance.md) describes the added calling/filtering checks. The [milestone 1 acceptance record](docs/milestone-1-acceptance.md) maps the original scope to tests and recorded results as of 2026-11-01. The [architecture migration acceptance record](docs/architecture-migration-acceptance.md) tracks the later shared entrypoint, sample layout, and execution diagnostics separately.
 
 Use Nextflow **26.10.6**, Java **21.0.13+9**, Python **3.12** for tests, and a running Docker installation for local development. Containers supply the bioinformatics tools; Conda execution is unsupported. The [reference-bundle guide](docs/reference-bundle.md) and [alignment guide](docs/alignment.md) describe inputs, outputs, runtime pins, and production use.
 
@@ -12,13 +12,13 @@ Run the compact acceptance tests from the checkout:
 python3 -m unittest discover -s tests -v
 ```
 
-These tests run real reference preparation, alignment, and their composition with Docker through the public workflow interfaces. The `docker,test` profiles limit execution to compact fixtures; full-human-reference runs belong on the production cluster.
+These tests run real reference preparation, alignment, variant calling/filtering, and their composition with Docker through the public workflow interfaces. The `docker,test` profiles limit execution to compact fixtures; full-human-reference runs belong on the production cluster.
 
 Launch the repository root with `nextflow run .`. Each invocation selects one workflow:
 
 | Selection | Behavior | Default output directory |
 | --- | --- | --- |
-| Omit `--workflow`, or use `--workflow oncohawk` | Align the sample sheet against an existing reference bundle. | `results` |
+| Omit `--workflow`, or use `--workflow oncohawk` | Align the sample sheet and call/filter small variants against an existing reference bundle. | `results` |
 | `--workflow prepare_reference_bundle` | Prepare a reusable reference bundle explicitly. | `reference` |
 | `--workflow prepare_knowledge_bundle` | Fail immediately with a not-yet-implemented error. | None |
 
@@ -45,7 +45,7 @@ selection retains its not-yet-implemented diagnostic.
 
 Root `main.nf` owns selection and publication; implementations live in `workflows/`. Root `nextflow.config` loads shared and selected-workflow settings from `conf/`, preserving process-selector isolation. Modules remain shared. The former `pipelines/reference` and `pipelines/alignment` entrypoints are removed.
 
-Analysis publishes `<sample>.bam` and `<sample>.bam.bai` under `results/samples/<sample>/alignments/`. An `--outdir` override replaces only `results`, retaining that sample layout and the filenames. Native trace, execution report, timeline, and DAG diagnostics remain opt-in and, when enabled, go under `<outdir>/execution/`. An ordinary invocation creates no diagnostics or empty execution, variant, or report directories. See [execution diagnostics](docs/alignment.md#execution-diagnostics) for commands and output protection.
+Analysis publishes `<sample>.bam` and `<sample>.bam.bai` under `results/samples/<sample>/alignments/`. An `--outdir` override replaces only `results`, retaining that sample layout and the filenames. Native trace, execution report, timeline, and DAG diagnostics remain opt-in and, when enabled, go under `<outdir>/execution/`. Analysis also publishes `<sample>.vcf.gz` and `<sample>.vcf.gz.tbi` under `results/samples/<sample>/variants/`. An ordinary invocation creates no diagnostics or empty execution/report directories. PASS records are tumor-only candidates, not confirmed somatic variants. See [execution diagnostics](docs/alignment.md#execution-diagnostics) for commands and output protection.
 
 Reference URLs use a persistent, integrity-checked download store, defaulting to `downloads` in the launch directory. Set `--downloads_dir /persistent/path` to share it across runs independently of Nextflow work directories and `-resume`. See [persistent downloads](docs/reference-bundle.md#persistent-downloads) for integrity, concurrency, and cluster setup.
 
@@ -60,7 +60,7 @@ nextflow run . --workflow prepare_reference_bundle -profile docker,test \
   --outdir /path/to/new-bundle
 ```
 
-Align small paired-end fixtures against that prepared bundle:
+Analyze small paired-end fixtures against that prepared bundle:
 
 ```bash
 nextflow run . -profile docker,test \
