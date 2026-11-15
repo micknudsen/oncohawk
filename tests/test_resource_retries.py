@@ -10,6 +10,8 @@ import unittest
 
 PROJECT = Path(__file__).resolve().parents[1]
 ALIGNMENT_REQUESTS = {
+    'GATK4_MUTECT2': [(2, 8, 24), (4, 16, 48)],
+    'GATK4_FILTERMUTECTCALLS': [(1, 4, 4), (1, 8, 8)],
     'CUTADAPT': [(4, 8, 4), (8, 16, 8)],
     'BWAMEM2_MEM': [(8, 64, 12), (16, 128, 24)],
     'SAMTOOLS_MERGE': [(2, 8, 4), (4, 16, 8)],
@@ -17,6 +19,8 @@ ALIGNMENT_REQUESTS = {
     'SAMTOOLS_INDEX': [(2, 4, 4), (4, 8, 8)],
 }
 REFERENCE_REQUESTS = {
+    'SAMTOOLS_FAIDX': [(1, 4, 4), (1, 8, 8)],
+    'PICARD_CREATESEQUENCEDICTIONARY': [(1, 4, 4), (1, 8, 8)],
     'REFERENCE_DOWNLOAD': [(1, 2, 24), (1, 4, 48)],
     'GUNZIP': [(1, 4, 2), (1, 8, 4)],
     'REFERENCE_VALIDATE': [(1, 16, 4), (1, 32, 8)],

@@ -25,12 +25,32 @@
             "git_sha": "20c6e6407f63748003b47f92837b64fb0a53ffa4",
             "installed_by": ["modules"]
           },
+          "gatk4/filtermutectcalls": {
+            "branch": "master",
+            "git_sha": "20c6e6407f63748003b47f92837b64fb0a53ffa4",
+            "installed_by": ["modules"]
+          },
+          "gatk4/mutect2": {
+            "branch": "master",
+            "git_sha": "20c6e6407f63748003b47f92837b64fb0a53ffa4",
+            "installed_by": ["modules"]
+          },
           "gunzip": {
             "branch": "master",
             "git_sha": "20c6e6407f63748003b47f92837b64fb0a53ffa4",
             "installed_by": ["modules"]
           },
+          "picard/createsequencedictionary": {
+            "branch": "master",
+            "git_sha": "20c6e6407f63748003b47f92837b64fb0a53ffa4",
+            "installed_by": ["modules"]
+          },
           "picard/markduplicates": {
+            "branch": "master",
+            "git_sha": "20c6e6407f63748003b47f92837b64fb0a53ffa4",
+            "installed_by": ["modules"]
+          },
+          "samtools/faidx": {
             "branch": "master",
             "git_sha": "20c6e6407f63748003b47f92837b64fb0a53ffa4",
             "installed_by": ["modules"]

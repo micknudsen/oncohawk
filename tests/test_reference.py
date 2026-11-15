@@ -142,6 +142,11 @@ class ReferencePreparationTests(unittest.TestCase):
         result = self.prepare(launch_directory=PROJECT)
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assert_reference_labels("source.fa.gz")
+        self.assertEqual((self.bundle / "reference.fa.fai").read_text().splitlines(),
+                         ["chr1\t20\t6\t20\t21", "chr2\t16\t33\t16\t17"])
+        dictionary = (self.bundle / "reference.dict").read_text()
+        self.assertIn("SN:chr1\tLN:20", dictionary)
+        self.assertIn("SN:chr2\tLN:16", dictionary)
         sequences = {}
         for line in (self.bundle / "reference.fa").read_text().splitlines():
             if line.startswith(">"):
@@ -155,7 +160,7 @@ class ReferencePreparationTests(unittest.TestCase):
         expected = {"reference.fa" + suffix for suffix in
                     [".0123", ".amb", ".ann", ".bwt.2bit.64", ".pac"]}
         self.assertEqual({path.relative_to(self.bundle).as_posix() for path in self.bundle.rglob("*")},
-                         {"bundle.json", "reference.fa", "bwamem2",
+                         {"bundle.json", "reference.fa", "reference.fa.fai", "reference.dict", "bwamem2",
                           "bwamem2/reference.fa.0123", "bwamem2/reference.fa.amb",
                           "bwamem2/reference.fa.ann", "bwamem2/reference.fa.bwt.2bit.64",
                           "bwamem2/reference.fa.pac"})
@@ -165,7 +170,7 @@ class ReferencePreparationTests(unittest.TestCase):
                          ["36 2 2", "4 4 N", "20 2 N"])
         manifest = json.loads((self.bundle / "bundle.json").read_text())
         self.assertEqual(next(iter(manifest)), "bundle_format_version")
-        self.assertEqual(manifest["bundle_format_version"], 1)
+        self.assertEqual(manifest["bundle_format_version"], 2)
         self.assertEqual(manifest["fasta"], "reference.fa")
         self.assertEqual(manifest["bwamem2_index"], "bwamem2/reference.fa")
         self.assertEqual(manifest["omitted_exclusions_bed_entries"], [])
@@ -173,9 +178,9 @@ class ReferencePreparationTests(unittest.TestCase):
         self.assertEqual(manifest["sources"]["fasta"]["sha256"], hashlib.sha256(self.fasta.read_bytes()).hexdigest())
         self.assertEqual(manifest["sources"]["exclusions_bed"]["sha256"], hashlib.sha256(self.bed.read_bytes()).hexdigest())
         self.assertEqual(manifest["workflow"]["nextflow"], "26.10.6")
-        self.assertEqual({entry["tool"] for entry in manifest["tools"]}, {"gunzip", "bedtools", "bwamem2"})
+        self.assertEqual({entry["tool"] for entry in manifest["tools"]}, {"gunzip", "bedtools", "bwamem2", "samtools", "picard"})
         self.assertTrue(all(entry["version"] for entry in manifest["tools"]))
-        self.assertEqual(set(manifest["modules"]), {"gunzip", "bedtools/maskfasta", "bwamem2/index"})
+        self.assertEqual(set(manifest["modules"]), {"gunzip", "bedtools/maskfasta", "bwamem2/index", "samtools/faidx", "picard/createsequencedictionary"})
         hashes = manifest["workflow"]["source_sha256"]
         self.assertIn("workflows/prepare_reference_bundle.nf", hashes)
         self.assertIn("main.nf", hashes)
@@ -220,7 +225,7 @@ class ReferencePreparationTests(unittest.TestCase):
         self.assertCountEqual(observed, ['RETRY\t1\t1\t1073741824\t600000',
                                          'RETRY\t2\t1\t1073741824\t600000'])
         manifest = json.loads((self.bundle / 'bundle.json').read_text())
-        self.assertEqual(manifest['bundle_format_version'], 1)
+        self.assertEqual(manifest['bundle_format_version'], 2)
         self.assertEqual((self.bundle / 'reference.fa').read_text(),
                          '>chr1\nACGTNNNNACGTACGTACGT\n>chr2\nNNTTCCCCAAAAGGGG\n')
         for artifact, checksum in manifest['checksums'].items():
@@ -230,7 +235,8 @@ class ReferencePreparationTests(unittest.TestCase):
         with (self.directory / f"trace-{self.run_count}.tsv").open() as handle:
             names = [row["name"].split(":")[-1] for row in csv.DictReader(handle, delimiter="\t")]
         expected = [f"{process} ({label})" for process in
-                    ["REFERENCE_VALIDATE", "BEDTOOLS_MASKFASTA", "BWAMEM2_INDEX", "REFERENCE_BUNDLE"]]
+                    ["REFERENCE_VALIDATE", "BEDTOOLS_MASKFASTA", "BWAMEM2_INDEX", "SAMTOOLS_FAIDX",
+                     "PICARD_CREATESEQUENCEDICTIONARY", "REFERENCE_BUNDLE"]]
         if compressed:
             expected.append(f"GUNZIP ({label})")
         if downloads:
@@ -597,6 +603,10 @@ class ReferencePreparationTests(unittest.TestCase):
                      "workflows/prepare_knowledge_bundle.nf"):
             with (snapshot / name).open("a") as handle:
                 handle.write("\n// Analysis or deferred knowledge revision\n")
+        lock_path = snapshot / "modules.json"
+        lock = json.loads(lock_path.read_text())
+        lock["repos"]["https://github.com/nf-core/modules.git"]["modules"]["nf-core"]["gatk4/mutect2"]["git_sha"] = "analysis-only-revision"
+        lock_path.write_text(json.dumps(lock))
         result = self.prepare("--outdir", "revised-reference", project=snapshot)
         self.assertEqual(result.returncode, 0, result.stdout)
         after = json.loads((self.directory / "revised-reference/bundle.json").read_text())

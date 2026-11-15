@@ -5,6 +5,8 @@ process REFERENCE_BUNDLE {
     input:
     path fasta
     path index
+    path fai
+    path dict
     path validation
     val metadata
     val versions
@@ -16,6 +18,6 @@ process REFERENCE_BUNDLE {
 
     script:
     """
-    python3 '${packager}' '${fasta}' '${index}' '${validation}' '${metadata}' '${versions}'
+    python3 '${packager}' '${fasta}' '${index}' '${fai}' '${dict}' '${validation}' '${metadata}' '${versions}'
     """
 }
