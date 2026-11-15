@@ -117,8 +117,8 @@ class AlignmentTests(unittest.TestCase):
                 f"samples/{sample}/alignments/{sample}.bam.bai",
             ])
             if variants:
-                expected.extend([f"samples/{sample}/variants", f"samples/{sample}/variants/{sample}.vcf.gz",
-                                 f"samples/{sample}/variants/{sample}.vcf.gz.tbi"])
+                expected.extend([f"samples/{sample}/variants", f"samples/{sample}/variants/{sample}.mutect2.vcf.gz",
+                                 f"samples/{sample}/variants/{sample}.mutect2.vcf.gz.tbi"])
         self.assertEqual(sorted(str(path.relative_to(self.output)) for path in self.output.rglob("*")),
                          sorted(expected))
 
@@ -157,7 +157,7 @@ class AlignmentTests(unittest.TestCase):
         self.samples()
         result = self.align()
         self.assertEqual(result.returncode, 0, result.stdout)
-        vcf = self.output / "samples/S1/variants/S1.vcf.gz"
+        vcf = self.output / "samples/S1/variants/S1.mutect2.vcf.gz"
         with gzip.open(vcf, "rt") as handle:
             lines = handle.read().splitlines()
         header = next(line for line in lines if line.startswith("#CHROM"))
@@ -169,7 +169,7 @@ class AlignmentTests(unittest.TestCase):
         self.assertEqual(observed[("chr1", 2501, self.chr1[2500], self.chr1[2500] + "AC")], "PASS")
         query = subprocess.check_output([
             "docker", "run", "--rm", "--platform=linux/amd64", "-v", f"{self.output}:/data:ro",
-            SAMTOOLS, "tabix", "/data/samples/S1/variants/S1.vcf.gz", "chr1:1501-1501",
+            SAMTOOLS, "tabix", "/data/samples/S1/variants/S1.mutect2.vcf.gz", "chr1:1501-1501",
         ], text=True)
         self.assertEqual(query.split("\t")[:2], ["chr1", "1501"])
 
@@ -204,7 +204,7 @@ class AlignmentTests(unittest.TestCase):
         result = self.align()
         self.assertEqual(result.returncode, 0, result.stdout)
         for sample in ["Rejected", "Clean"]:
-            with gzip.open(self.output / f"samples/{sample}/variants/{sample}.vcf.gz", "rt") as handle:
+            with gzip.open(self.output / f"samples/{sample}/variants/{sample}.mutect2.vcf.gz", "rt") as handle:
                 lines = handle.read().splitlines()
             self.assertEqual(next(line for line in lines if line.startswith("#CHROM")).split("\t")[9:], [sample])
             records = [line.split("\t") for line in lines if not line.startswith("#")]
@@ -216,7 +216,7 @@ class AlignmentTests(unittest.TestCase):
                 self.assertEqual(records, [])
             query = subprocess.check_output([
                 "docker", "run", "--rm", "--platform=linux/amd64", "-v", f"{self.output}:/data:ro",
-                SAMTOOLS, "tabix", f"/data/samples/{sample}/variants/{sample}.vcf.gz", "chr1:1501-1501",
+                SAMTOOLS, "tabix", f"/data/samples/{sample}/variants/{sample}.mutect2.vcf.gz", "chr1:1501-1501",
             ], text=True)
             self.assertEqual(bool(query), sample == "Rejected")
 
@@ -501,7 +501,7 @@ class AlignmentTests(unittest.TestCase):
                            "  maxForks = 2\n"
                            "  beforeScript = { meta.sample == 'S2' ? \""
                            "for attempt in {1..60}; do "
-                           f"if test -s '{self.output}/samples/S1/variants/S1.vcf.gz.tbi'; then exit 17; fi; "
+                           f"if test -s '{self.output}/samples/S1/variants/S1.mutect2.vcf.gz.tbi'; then exit 17; fi; "
                            "sleep 1; done; exit 18\" : '' }\n"
                            "} }\n")
         result = self.align(config=failure)
@@ -509,13 +509,13 @@ class AlignmentTests(unittest.TestCase):
         self.assertIn("Error executing process > 'ONCOHAWK:GATK4_FILTERMUTECTCALLS (S2)'", result.stdout)
         self.assert_bam_pairs(pairs, sample="S1")
         self.assert_bam_pairs(pairs, sample="S2")
-        self.assertFalse((self.output / "samples/S2/variants/S2.vcf.gz").exists())
-        with gzip.open(self.output / "samples/S1/variants/S1.vcf.gz", "rt") as handle:
+        self.assertFalse((self.output / "samples/S2/variants/S2.mutect2.vcf.gz").exists())
+        with gzip.open(self.output / "samples/S1/variants/S1.mutect2.vcf.gz", "rt") as handle:
             lines = handle.read().splitlines()
         self.assertEqual(next(line for line in lines if line.startswith("#CHROM")).split("\t")[9:], ["S1"])
         query = subprocess.check_output([
             "docker", "run", "--rm", "--platform=linux/amd64", "-v", f"{self.output}:/data:ro",
-            SAMTOOLS, "tabix", "/data/samples/S1/variants/S1.vcf.gz", "chr1:1-6000",
+            SAMTOOLS, "tabix", "/data/samples/S1/variants/S1.mutect2.vcf.gz", "chr1:1-6000",
         ], text=True)
         self.assertEqual(query, "")
 
@@ -842,13 +842,13 @@ class AlignmentTests(unittest.TestCase):
                 self.assertEqual(self.samtools("view", "/data/samples/S1/alignments/S1.bam", "chr1:1-6000"), "")
                 self.assertIn("\tSM:S1", self.samtools("view", "-H", "/data/samples/S1/alignments/S1.bam"))
                 self.assert_sample_tree(["S1"])
-                with gzip.open(self.output / "samples/S1/variants/S1.vcf.gz", "rt") as handle:
+                with gzip.open(self.output / "samples/S1/variants/S1.mutect2.vcf.gz", "rt") as handle:
                     lines = handle.read().splitlines()
                 self.assertEqual(next(line for line in lines if line.startswith("#CHROM")).split("\t")[9:], ["S1"])
                 self.assertFalse(any(not line.startswith("#") for line in lines))
                 query = subprocess.check_output([
                     "docker", "run", "--rm", "--platform=linux/amd64", "-v", f"{self.output}:/data:ro",
-                    SAMTOOLS, "tabix", "/data/samples/S1/variants/S1.vcf.gz", "chr1:1-6000",
+                    SAMTOOLS, "tabix", "/data/samples/S1/variants/S1.mutect2.vcf.gz", "chr1:1-6000",
                 ], text=True)
                 self.assertEqual(query, "")
 
