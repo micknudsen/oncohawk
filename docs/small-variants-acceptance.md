@@ -25,4 +25,4 @@ The Q19 fixture uses real paired FASTQs, alignment, calling and default filterin
 
 An initial full local run exposed the upstream GATK temporary-directory conversion defect in the retained spaced-launch regression. Per-task native scratch was added through configuration. Both additive/replacement site configurations and relative/symlinked output paths then passed the unchanged public regression (83 s); both independent review axes found no issues in this correction. The earlier run was stopped after this known failure, and a complete corrected run was started.
 
-Full local suite and required Linux CI results will be recorded after execution. Full-human-reference and SLURM/Apptainer runs remain informal operator checks and are not claimed by this record.
+The complete local-suite result and required Linux CI evidence are tracked in [delivery PR #47](https://github.com/micknudsen/oncohawk/pull/47). The targeted results above record their own execution scope; the PR records the final delivery gates. Full-human-reference and SLURM/Apptainer runs remain informal operator checks and are not claimed by this record.
