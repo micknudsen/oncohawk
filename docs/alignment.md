@@ -104,7 +104,7 @@ Coordinate-sorted row BAMs are grouped by sample and passed to samtools merge in
 
 ## Tumor-only small variants
 
-Each completed duplicate-marked BAM/index feeds the pristine nf-core `gatk4/mutect2` module, followed by `gatk4/filtermutectcalls`. Both use GATK **4.7.0.0**, pinned in the upstream modules installed through nf-core CLI **4.2.1** at `20c6e6407f63748003b47f92837b64fb0a53ffa4`. FilterMutectCalls receives the caller's statistics, VCF/index, and the same masked reference, FASTA index, and sequence dictionary. Its compressed output and tabix index form the final deliverable; calling/filtering statistics stay in task work directories.
+Each completed duplicate-marked BAM/index feeds the pristine nf-core `gatk4/mutect2` module, followed by `gatk4/filtermutectcalls`. Both use GATK **4.7.0.0**, pinned in the upstream modules installed through nf-core CLI **4.2.1** at `20c6e6407f63748003b47f92837b64fb0a53ffa4`. FilterMutectCalls receives the caller's statistics, VCF/index, and the same masked reference, FASTA index, and sequence dictionary. Its compressed output and tabix index are named `<sample>.mutect2.vcf.gz` and `<sample>.mutect2.vcf.gz.tbi`, retaining both sample identity and the caller name. They form the final deliverable; calling/filtering statistics stay in task work directories.
 
 Calling and filtering use tool defaults with required input/output wiring. No germline resource, panel of normals, known-sites/hotspot dataset, contamination estimation, orientation-bias model, BQSR, or custom filtering thresholds are added. The VCF retains every final called record with its FILTER labels, including failed filters; no PASS-only file is generated. PASS means the candidate passed these tool filters. Tumor-only calls can include germline variants and artifacts and are **not confirmed somatic variants**.
 
@@ -128,15 +128,15 @@ results/
     │   │   ├── S1.bam
     │   │   └── S1.bam.bai
     │   └── variants/
-    │       ├── S1.vcf.gz
-    │       └── S1.vcf.gz.tbi
+    │       ├── S1.mutect2.vcf.gz
+    │       └── S1.mutect2.vcf.gz.tbi
     └── S2/
         ├── alignments/
         │   ├── S2.bam
         │   └── S2.bam.bai
         └── variants/
-            ├── S2.vcf.gz
-            └── S2.vcf.gz.tbi
+            ├── S2.mutect2.vcf.gz
+            └── S2.mutect2.vcf.gz.tbi
 ```
 
 For example, `--outdir /path/to/new-results` places S1's BAM at `/path/to/new-results/samples/S1/alignments/S1.bam`. No flat duplicate BAMs or empty report directories are published. With diagnostics disabled, the tree above contains the entire published analysis output; there is no `execution` directory.
