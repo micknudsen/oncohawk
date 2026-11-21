@@ -28,7 +28,7 @@ Nextflow profile with `-profile` (one dash); `--profile` fails with a correction
 | `--annotation_fasta` | Local unmasked `.fa`/`.fa.gz` or URL; defaults to Ensembl release-116 GRCh38 primary assembly. This is separate from the alignment FASTA. |
 | `--vep_cache` | Local `.tar.gz` or URL containing a genuine compatible human GRCh38 RefSeq-only cache 116. |
 | `--annotation_fasta_sha256`, `--vep_cache_sha256` | Expected SHA256 for custom annotation sources; hashes cover original compressed bytes. Official source checksums are fixed. |
-| `--annotation_fasta_identity`, `--vep_cache_identity` | Optional dataset/release/assembly identity objects for custom sources, following the existing source-identity rules. Actual RefSeq/MANE versions are read separately from cache metadata. |
+| `--annotation_fasta_identity`, `--vep_cache_identity` | Optional dataset/release/assembly identity objects for custom sources, following the existing source-identity rules. RefSeq versions come from cache metadata; MANE provenance comes separately from pinned matching-release core metadata. |
 | `--outdir` | New directory for the completed bundle; default `reference`. Choose a fresh destination for each bundle. |
 | `--downloads_dir` | Persistent source-download store on a local/shared filesystem; default `downloads` relative to the launch directory. Independent of `-work-dir` and `--outdir`. |
 | `--download_ca_bundle` | Optional local/shared PEM file containing additional trusted CA certificates. Defaults to `SSL_CERT_FILE` from the launch environment when set. Staged into download containers. |
@@ -107,12 +107,17 @@ example.mkdir(parents=True, exist_ok=True)
 with gzip.open(example / 'small.fa.gz', 'wt') as handle:
     handle.write('>chr1\nACGTACGTACGTACGTACGT\n>chr2\nTTTTCCCCAAAAGGGG\n')
 (example / 'exclusions.bed').write_text('chr1\t4\t8\nchr2\t0\t2\n')
+(example / 'annotation.fa').write_text('>1\nACGTACGTACGTACGTACGT\n>2\nTTTTCCCCAAAAGGGG\n')
 PY
 nextflow run . --workflow prepare_reference_bundle -profile docker,test \
   --fasta .local/reference-example/small.fa.gz \
   --exclusions_bed .local/reference-example/exclusions.bed \
+  --annotation_fasta .local/reference-example/annotation.fa \
+  --vep_cache tests/data/vep116/refseq-cache.tar.gz \
   --outdir .local/reference-example/bundle
 ```
+
+This synthetic 36-base example exercises bundle preparation, not biological consequences. The committed real-cache/sequence fixture and public annotation tests establish those separately. All example inputs above are local; no whole-human resources are downloaded.
 
 The `docker` profile uses `--platform=linux/amd64`, including on Apple Silicon. The `test` profile limits local execution to two CPUs and 4 GiB total task memory, with at most one task per process; the indexing task requests 2 GiB. These settings serve compact fixtures, not the human reference.
 

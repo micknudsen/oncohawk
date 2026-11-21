@@ -66,7 +66,7 @@ nextflow run . -profile docker,test \
   --outdir /path/to/new-results
 ```
 
-`--reference_bundle` points to the directory containing format-3 `bundle.json`, `reference.fa`, `reference.fa.fai`, `reference.dict`, and the bwa-mem2 indexes. `--outdir` must be a fresh output directory. The Docker profile selects `linux/amd64` containers, including on Apple Silicon; the test profile limits local execution to two CPUs and 4 GiB total task memory. Use compact references locally and full-human-reference inputs on the production cluster.
+`--reference_bundle` points to the directory containing format-3 `bundle.json`, `reference.fa`, `reference.fa.fai`, `reference.dict`, the bwa-mem2 indexes, and the prepared `annotation/` subtree. `--outdir` must be a fresh output directory. The Docker profile selects `linux/amd64` containers, including on Apple Silicon; the test profile limits local execution to two CPUs and 4 GiB total task memory. Use compact references locally and full-human-reference inputs on the production cluster.
 
 Analysis accepts only `workflow`, `input`, `reference_bundle`,
 `verify_bundle_checksums`, and `outdir` as pipeline parameter names. Unsupported
@@ -110,7 +110,9 @@ Calling and filtering use tool defaults with required input/output wiring. No ge
 
 The two GATK tasks use native Nextflow task-local scratch. GATK 4.7.0.0's [temporary-directory conversion](https://github.com/broadinstitute/gatk/blob/4.7.0.0/src/main/java/org/broadinstitute/hellbender/utils/io/IOUtils.java#L825) percent-encodes spaces while setting `java.io.tmpdir`, breaking temporary codec-resource extraction under a spaced task work path. Scratch keeps the pristine modules' `--tmp-dir .` local to the temporary task directory while Nextflow stages inputs and copies completed outputs back to the work directory. User launch/output directories may still contain spaces.
 
-The execution environment's temporary/scratch root must be writable, have sufficient capacity for GATK temporary data and staged outputs, and use a path without spaces or other URI-escaped characters. `scratch = true` uses Nextflow's native temporary-directory selection; a site-specific `scratch` selector may choose an appropriate node-local location. A custom `TMPDIR` containing spaces can reproduce the upstream problem. This is per-task runtime configuration, not a scientific calling/filtering option.
+VEP also uses native task-local scratch because the pristine module expands its cache path from an unquoted working-directory variable. This preserves support for launch paths containing spaces without modifying the upstream module.
+
+The execution environment's temporary/scratch root must be writable, have sufficient capacity for GATK/VEP temporary data and staged outputs, and use a path without spaces or other URI-escaped characters. `scratch = true` uses Nextflow's native temporary-directory selection; a site-specific `scratch` selector may choose an appropriate node-local location. A custom `TMPDIR` containing spaces can reproduce the upstream problem. This is per-task runtime configuration, not a scientific calling/filtering option.
 
 GATK tasks appear in enabled diagnostics. Resource overrides use `GATK4_MUTECT2` and `GATK4_FILTERMUTECTCALLS` selectors in the existing analysis configuration. SLURM defaults are starting allocations, not full-reference measurements; the existing bounded retry policy applies. No new public workflow or BAM-input mode is introduced.
 

@@ -45,11 +45,14 @@ class AnnotationTests(unittest.TestCase):
         with gzip.open(DATA / "annotation.fa.gz", "rt") as handle:
             lines = handle.read().splitlines()
         cls.sequence = "".join(lines[1:])
+        generator = random.Random(271828)
+        cls.unsupported = "".join(generator.choices("ACGT", k=6000))
         source = cls.root / "alignment.fa.gz"
+        cls.source = source
         with gzip.open(source, "wt") as handle:
-            handle.write(">chr1\n" + "\n".join(lines[1:]) + "\n")
+            handle.write(">chr1\n" + "\n".join(lines[1:]) + "\n>unsupported\n" + cls.unsupported + "\n")
         bed = cls.root / "mask.bed"
-        bed.write_text("# Sequence fixtures use explicitly chosen masks in separate native tests.\n")
+        bed.write_text("# Sequence fixtures use explicitly chosen masks in separate context tests.\n")
         result = subprocess.run([
             os.environ.get("NEXTFLOW", "nextflow"), "run", str(PROJECT),
             "--workflow", "prepare_reference_bundle", "-profile", "docker,test",
@@ -190,51 +193,78 @@ class AnnotationTests(unittest.TestCase):
         masked = next(row for row in csq["1232281"] if row["Feature"] == "NM_080605.4")
         self.assertEqual(masked["HGVSc"], "NM_080605.4:c.4del")
 
-    def test_default_analysis_calls_and_annotates_known_snv_and_indel(self):
-        samples = []
-        for sample, deleted in [("SNV", False), ("INDEL", True)]:
-            generator = random.Random(20261121)
-            mates = [self.directory / f"{sample}_R{mate}.fastq.gz" for mate in (1, 2)]
-            with gzip.open(mates[0], "wt") as first, gzip.open(mates[1], "wt") as second:
+    def sample_reads(self, sample, variants):
+        generator = random.Random(20261121)
+        mates = [self.directory / f"{sample}_R{mate}.fastq.gz" for mate in (1, 2)]
+        with gzip.open(mates[0], "wt") as first, gzip.open(mates[1], "wt") as second:
+            for variant, (contig, position, reference, alternate) in enumerate(variants):
+                sequence = self.sequence if contig == "chr1" else self.unsupported
+                self.assertEqual(sequence[position - 1:position - 1 + len(reference)], reference)
                 for number in range(600):
-                    site = 1232299 if deleted else 1232281
-                    start = site - generator.randrange(310)
-                    fragment = self.sequence[start:start + generator.randrange(240, 380)]
-                    offset = site - start
-                    if number % 4 == 0 and offset + 3 < len(fragment):
-                        fragment = (fragment[:offset] + fragment[offset + 3:] if deleted else
-                                    fragment[:offset] + "C" + fragment[offset + 1:])
+                    start = position - 1 - generator.randrange(310)
+                    fragment = sequence[start:start + generator.randrange(240, 380)]
+                    offset = position - 1 - start
+                    if number % 4 == 0 and offset + len(reference) <= len(fragment):
+                        fragment = fragment[:offset] + alternate + fragment[offset + len(reference):]
                     for handle, mate, read in [(first, 1, fragment[:150]),
                                                (second, 2, fragment[-150:].translate(str.maketrans("ACGTN", "TGCAN"))[::-1])]:
-                        handle.write(f"@{sample}_{number}/{mate}\n{read}\n+\n{'I' * len(read)}\n")
-            samples.append([sample, "L1", "FC1", "1", *map(str, mates)])
+                        handle.write(f"@{sample}_{variant}_{number}/{mate}\n{read}\n+\n{'I' * len(read)}\n")
+        return [sample, "L1", "FC1", "1", *map(str, mates)]
+
+    def sample_sheet(self, rows):
         sheet = self.directory / "samples.csv"
         with sheet.open("w", newline="") as handle:
             writer = csv.writer(handle)
             writer.writerow(["sample", "library", "flowcell", "lane", "fastq_1", "fastq_2"])
-            writer.writerows(samples)
+            writer.writerows(rows)
+        return sheet
+
+    def analyze(self, sheet, output, bundle=None, config=None, resume=False):
+        result = subprocess.run([
+            os.environ.get("NEXTFLOW", "nextflow"), *(["-c", str(config)] if config else []),
+            "run", str(PROJECT), "-profile", "docker,test",
+            "--input", str(sheet), "--reference_bundle", str(bundle or self.bundle), "--outdir", str(output),
+            *(["-resume"] if resume else []),
+        ], cwd=self.directory, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        (self.directory / f"{output.name}.log").write_text(result.stdout)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        return result
+
+    def preserved_callset(self, output, sample):
+        directory = output / f"samples/{sample}/variants"
+        original = directory / f"{sample}.mutect2.vcf.gz"
+        annotated = directory / f"{sample}.mutect2.vep.vcf.gz"
+        names, original_records, _ = vcf(original)
+        annotated_names, records, csq = vcf(annotated)
+        self.assertEqual(names, [sample])
+        self.assertEqual(annotated_names, names)
+        self.assertEqual([row[:7] + row[8:] for row in records],
+                         [row[:7] + row[8:] for row in original_records])
+        for before, after in zip(original_records, records):
+            self.assertTrue(set(before[7].split(";")) <= set(after[7].split(";")))
+        return original, annotated, records, csq
+
+    def test_default_analysis_calls_and_annotates_known_snv_and_indel(self):
+        unsupported_ref = self.unsupported[1500]
+        unsupported_alt = "A" if unsupported_ref != "A" else "C"
+        contexts = [("chr1", 45334490, "C", "T"), ("chr1", 1386646, "G", "A"),
+                    ("chr1", 1353203, "C", "T"), ("chr1", 1128721, "G", "A"),
+                    ("chr1", 1254699, "A", "C"), ("chr1", 1005098, "C", "T"),
+                    ("unsupported", 1501, unsupported_ref, unsupported_alt)]
+        sheet = self.sample_sheet([
+            self.sample_reads("SNV", [("chr1", 1232282, "A", "C")]),
+            self.sample_reads("INDEL", [("chr1", 1232298, "CGTG", "C")]),
+            self.sample_reads("Contexts", contexts),
+        ])
         output = self.directory / "results"
         before = {str(path): hashlib.sha256(path.read_bytes()).hexdigest()
                   for path in self.bundle.rglob("*") if path.is_file()}
-        result = subprocess.run([
-            os.environ.get("NEXTFLOW", "nextflow"), "run", str(PROJECT), "-profile", "docker,test",
-            "--input", str(sheet), "--reference_bundle", str(self.bundle), "--outdir", str(output),
-        ], cwd=self.directory, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        (self.directory / "analysis.log").write_text(result.stdout)
-        self.assertEqual(result.returncode, 0, result.stdout)
+        self.analyze(sheet, output)
         for sample, position, transcript_change, protein_change in [
             ("SNV", "1232282", "NM_080605.4:c.4A>C", "NP_542172.2:p.Lys2Gln"),
             ("INDEL", "1232298", "NM_080605.4:c.22_24del", "NP_542172.2:p.Trp8del"),
         ]:
-            directory = output / f"samples/{sample}/variants"
-            original = directory / f"{sample}.mutect2.vcf.gz"
-            annotated = directory / f"{sample}.mutect2.vep.vcf.gz"
-            names, original_records, _ = vcf(original)
-            annotated_names, records, csq = vcf(annotated)
-            self.assertEqual(names, [sample])
-            self.assertEqual(annotated_names, names)
-            self.assertEqual([row[:7] + row[8:] for row in records],
-                             [row[:7] + row[8:] for row in original_records])
+            original, annotated, records, csq = self.preserved_callset(output, sample)
             transcript = next(row for row in csq[position] if row["Feature"] == "NM_080605.4")
             self.assertEqual(transcript["HGVSc"], transcript_change)
             self.assertEqual(transcript["HGVSp"], protein_change)
@@ -244,8 +274,90 @@ class AnnotationTests(unittest.TestCase):
                                      f"chr1:{position}-{position}")
                 self.assertEqual(result.returncode, 0, result.stdout)
                 self.assertIn(f"chr1\t{position}\t", result.stdout)
+        _, _, records, csq = self.preserved_callset(output, "Contexts")
+        self.assertEqual({(row[0], int(row[1]), row[3], row[4]) for row in records}, set(contexts))
+        features = [row["Feature"] for entries in csq.values() for row in entries if row["Feature"]]
+        self.assertTrue(any(name.startswith("NM_") for name in features))
+        self.assertTrue(any(name.startswith("NR_") for name in features))
+        self.assertFalse(any(name.startswith(("XM_", "XR_")) for name in features))
+        mane = {row["Feature"]: row for row in csq["45334490"]}
+        for name, hgvs_c, hgvs_p, flag in [
+            ("NM_001048174.2", "NM_001048174.2:c.16G>A", "NP_001041639.1:p.Ala6Thr", "MANE_SELECT"),
+            ("NM_001128425.2", "NM_001128425.2:c.58G>A", "NP_001121897.1:p.Ala20Thr", "MANE_PLUS_CLINICAL"),
+        ]:
+            self.assertEqual(mane[name]["HGVSc"], hgvs_c)
+            self.assertEqual(mane[name]["HGVSp"], hgvs_p)
+            self.assertTrue(mane[name][flag])
+        noncoding = next(row for row in csq["1386646"] if row["Feature"] == "NR_146722.2")
+        self.assertEqual((noncoding["HGVSc"], noncoding["HGVSp"]), ("NR_146722.2:n.2699C>T", ""))
+        self.assertTrue(any(row["Feature"].startswith("NM_") and not row["MANE_SELECT"] and
+                            not row["MANE_PLUS_CLINICAL"] for entries in csq.values() for row in entries))
+        corrected = next(row for row in csq["1353203"] if row["Feature"] == "NM_001282585.1")
+        self.assertEqual(corrected["HGVSc"], "NM_001282585.1:c.*98C>A")
+        self.assertEqual((corrected["GIVEN_REF"], corrected["USED_REF"], corrected["BAM_EDIT"]), ("C", "G", "OK"))
+        for position in ("1128721", "1005098", "1501"):
+            self.assertEqual(csq[position][0]["Consequence"], "intergenic_variant")
+        diagnostics = "\n".join(path.read_text() for path in (self.directory / "work").glob("*/*/.command.err"))
+        self.assertIn("Chromosome unsupported not found in annotation sources or synonyms", diagnostics)
+        control_options = list(self.options)
+        control_options.remove("--exclude_predicted")
+        index = control_options.index("--transcript_filter")
+        del control_options[index:index + 2]
+        config = self.directory / "model-control.config"
+        config.write_text("process { withName: ENSEMBLVEP_VEP { ext.args = " +
+                          json.dumps(shlex.join(control_options)) + " } }\n")
+        control_output = self.directory / "models"
+        self.analyze(sheet, control_output, config=config, resume=True)
+        _, _, _, models = self.preserved_callset(control_output, "Contexts")
+        self.assertTrue(any(row["Feature"].startswith("XR_") for row in models["1128721"]))
+        self.assertTrue(any(row["Feature"].startswith("XM_") for row in models["1254699"]))
         self.assertEqual({str(path): hashlib.sha256(path.read_bytes()).hexdigest()
                           for path in self.bundle.rglob("*") if path.is_file()}, before)
+
+    def test_public_annotation_uses_independent_unmasked_indel_context(self):
+        # Keep the alignment source identical so real Mutect2 can call the indel.
+        # The control changes only the following annotation base, outside REF.
+        sheet = self.sample_sheet([self.sample_reads("Context", [("chr1", 1232281, "GA", "G")])])
+        output = self.directory / "unmasked-results"
+        self.analyze(sheet, output)
+        original_path, _, original, csq = self.preserved_callset(output, "Context")
+        self.assertTrue(any(row[1] == "1232281" and row[3:5] == ["GA", "G"] for row in original), original)
+        transcript = next(row for row in csq["1232281"] if row["Feature"] == "NM_080605.4")
+        self.assertEqual(transcript["HGVSc"], "NM_080605.4:c.5del")
+        self.assertEqual(transcript["HGVSp"], "NP_542172.2:p.Lys2SerfsTer13")
+        position = 1232283 - 1
+        self.assertEqual(self.sequence[position], "A")
+        masked_sequence = self.sequence[:position] + "N" + self.sequence[position + 1:]
+        annotation = self.directory / "masked-annotation.fa.gz"
+        with gzip.open(annotation, "wt") as handle:
+            handle.write(">1\n")
+            for offset in range(0, len(masked_sequence), 60):
+                handle.write(masked_sequence[offset:offset + 60] + "\n")
+        bed = self.directory / "mask.bed"
+        bed.write_text("# Alignment is identical in both public context runs.\n")
+        bundle = self.directory / "masked-annotation-bundle"
+        result = subprocess.run([
+            os.environ.get("NEXTFLOW", "nextflow"), "run", str(PROJECT),
+            "--workflow", "prepare_reference_bundle", "-profile", "docker,test",
+            "--fasta", str(self.source), "--exclusions_bed", str(bed),
+            "--annotation_fasta", str(annotation),
+            "--vep_cache", str(DATA / "refseq-cache.tar.gz"), "--outdir", str(bundle),
+        ], cwd=self.directory, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        (self.directory / "masked-annotation-preparation.log").write_text(result.stdout)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        report = json.loads((bundle / "annotation/compatibility.json").read_text())
+        self.assertEqual(report["alignment_masked_bases"]["chr1"], 0)
+        chromosome = next(contig for contig in report["contigs"] if contig["alignment"] == "chr1")
+        self.assertEqual(chromosome["annotation_gap_bases"], 1)
+        self.assertEqual(hashlib.sha256((bundle / "reference.fa").read_bytes()).digest(),
+                         hashlib.sha256((self.bundle / "reference.fa").read_bytes()).digest())
+        control_output = self.directory / "masked-annotation-results"
+        self.analyze(sheet, control_output, bundle=bundle, resume=True)
+        control_path, _, _, csq = self.preserved_callset(control_output, "Context")
+        self.assertEqual(vcf(control_path)[1], vcf(original_path)[1])
+        transcript = next(row for row in csq["1232281"] if row["Feature"] == "NM_080605.4")
+        self.assertEqual(transcript["HGVSc"], "NM_080605.4:c.4del")
+        self.assertEqual(transcript["HGVSp"], "NP_542172.2:p.Lys2SerfsTer13")
 
 
 if __name__ == "__main__":

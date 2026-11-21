@@ -98,10 +98,10 @@ def alignmentReference(value, verify_checksums) {
     }
     if (!cache_files.any { it.endsWith('.gz') } || bundle.checksums.keySet() != (artifacts + cache_files).toSet())
         error('Reference-bundle cache contents do not match its checksum inventory; rebuild with --workflow prepare_reference_bundle')
-    return [root.resolve('reference.fa'), root.resolve('bwamem2'),
-            root.resolve('reference.fa.fai'), root.resolve('reference.dict'),
-            root.resolve('annotation/reference.fa'), root.resolve('annotation/reference.fa.fai'),
-            root.resolve('annotation/cache'), root.resolve('annotation/chr_synonyms.txt')]
+    return [alignment_fasta: root.resolve('reference.fa'), bwamem2: root.resolve('bwamem2'),
+            alignment_fai: root.resolve('reference.fa.fai'), alignment_dictionary: root.resolve('reference.dict'),
+            annotation_fasta: root.resolve('annotation/reference.fa'), annotation_fai: root.resolve('annotation/reference.fa.fai'),
+            annotation_cache: root.resolve('annotation/cache'), annotation_synonyms: root.resolve('annotation/chr_synonyms.txt')]
 }
 
 def sampleInputs(table, sheet) {
@@ -183,8 +183,8 @@ workflow ONCOHAWK {
         .map { table -> sampleInputs(table, sheet) }
         .flatMap { rows -> rows }
     CUTADAPT(inputs)
-    BWAMEM2_MEM(CUTADAPT.out.reads, channel.value([[id: 'reference'], reference[1]]),
-                channel.value([[id: 'reference'], reference[0]]), true)
+    BWAMEM2_MEM(CUTADAPT.out.reads, channel.value([[id: 'reference'], reference.bwamem2]),
+                channel.value([[id: 'reference'], reference.alignment_fasta]), true)
     sample_bams = BWAMEM2_MEM.out.bam
         .map { meta, bam -> [[id: meta.sample, sample: meta.sample], bam] }
         .groupTuple()
@@ -196,21 +196,21 @@ workflow ONCOHAWK {
 
     GATK4_MUTECT2(
         completed.map { meta, bam, bai -> [meta, [bam], [bai], []] },
-        channel.value([[:], reference[0]]), channel.value([[:], reference[2], []]),
-        channel.value([[:], reference[3]]), [], [], [], [], [], []
+        channel.value([[:], reference.alignment_fasta]), channel.value([[:], reference.alignment_fai, []]),
+        channel.value([[:], reference.alignment_dictionary]), [], [], [], [], [], []
     )
     calls = GATK4_MUTECT2.out.vcf.join(GATK4_MUTECT2.out.tbi).join(GATK4_MUTECT2.out.stats)
     GATK4_FILTERMUTECTCALLS(
         calls.map { meta, vcf, tbi, stats -> [meta, vcf, tbi, stats, [], [], [], 0] },
-        channel.value([[:], reference[0]]), channel.value([[:], reference[2]]),
-        channel.value([[:], reference[3]])
+        channel.value([[:], reference.alignment_fasta]), channel.value([[:], reference.alignment_fai]),
+        channel.value([[:], reference.alignment_dictionary])
     )
 
     filtered = GATK4_FILTERMUTECTCALLS.out.vcf.join(GATK4_FILTERMUTECTCALLS.out.tbi)
     ENSEMBLVEP_VEP(
         filtered.map { meta, vcf, _tbi -> [meta, vcf, []] },
-        'GRCh38', 'homo_sapiens', '116', channel.value([[:], reference[6]]),
-        channel.value([[:], reference[4]]), channel.value([reference[5], reference[7]]), [[], []]
+        'GRCh38', 'homo_sapiens', '116', channel.value([[:], reference.annotation_cache]),
+        channel.value([[:], reference.annotation_fasta]), channel.value([reference.annotation_fai, reference.annotation_synonyms]), [[], []]
     )
 
     emit:
