@@ -109,11 +109,11 @@ workflow PREPARE_REFERENCE_BUNDLE {
     if (remote)
         downloads.mkdirs()
     assets = remote.collect { kind, uri ->
-        [kind, encoded([kind: kind, uri: uri, expected: checksums[kind], identity: identities[kind]])]
+        [kind, encoded([kind: kind, uri: uri, expected: checksums[kind], identity: identities[kind]]), referenceLabel(uri)]
     }
     REFERENCE_DOWNLOAD(
         channel.fromList(assets), downloads.toString(), file("$repository/bin/download_reference.py"), ca_bundle,
-        proxyEnvironment(), reference_label
+        proxyEnvironment()
     )
     acquired = REFERENCE_DOWNLOAD.out.source.map { kind, result ->
         [kind, referenceInput(new groovy.json.JsonSlurper().parseText(result.text).path)]
