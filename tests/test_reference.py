@@ -19,6 +19,8 @@ import time
 import unittest
 from urllib.parse import urlsplit
 
+from annotation_fixture import CACHE, annotation_arguments
+
 
 PROJECT = Path(__file__).resolve().parents[1]
 
@@ -45,6 +47,7 @@ class ReferencePreparationTests(unittest.TestCase):
     @contextmanager
     def http_sources(self, interrupted=None, delay=0, tls_context=None):
         payloads = {"/source.fa.gz": self.fasta.read_bytes(), "/exclusions.bed": self.bed.read_bytes()}
+        self.fixture_payloads = payloads
         requests = Counter()
         request_lock = threading.Lock()
         interrupted = interrupted or {}
@@ -120,12 +123,20 @@ class ReferencePreparationTests(unittest.TestCase):
                 environment=None, profile="docker,test"):
         self.run_count += 1
         run_number = self.run_count
+        uri = urlsplit(str(self.fasta))
+        payload = getattr(self, "fixture_payloads", {}).get(uri.path)
+        if payload is None:
+            path = Path(self.fasta) if not uri.scheme else self.directory / "source.fa.gz"
+            if not path.is_absolute():
+                path = self.directory / path
+            payload = path.read_bytes()
+        annotation = annotation_arguments(self.directory, payload)
         command = [
             os.environ.get("NEXTFLOW", "nextflow"), "run", str(project), "--workflow", "prepare_reference_bundle",
             "-profile", profile,
             "-c", str(self.http_config),
             "-with-trace", str(self.directory / f"trace-{run_number}.tsv"),
-            "--fasta", str(self.fasta), "--exclusions_bed", str(self.bed),
+            "--fasta", str(self.fasta), "--exclusions_bed", str(self.bed), *annotation,
             *(["--outdir", str(self.bundle)] if not default_output else []), *arguments,
         ]
         result = subprocess.run(command, cwd=launch_directory or self.directory, text=True,
@@ -159,7 +170,8 @@ class ReferencePreparationTests(unittest.TestCase):
         })
         expected = {"reference.fa" + suffix for suffix in
                     [".0123", ".amb", ".ann", ".bwt.2bit.64", ".pac"]}
-        self.assertEqual({path.relative_to(self.bundle).as_posix() for path in self.bundle.rglob("*")},
+        self.assertEqual({path.relative_to(self.bundle).as_posix() for path in self.bundle.rglob("*")
+                          if path.relative_to(self.bundle).parts[0] != "annotation"},
                          {"bundle.json", "reference.fa", "reference.fa.fai", "reference.dict", "bwamem2",
                           "bwamem2/reference.fa.0123", "bwamem2/reference.fa.amb",
                           "bwamem2/reference.fa.ann", "bwamem2/reference.fa.bwt.2bit.64",
@@ -170,8 +182,20 @@ class ReferencePreparationTests(unittest.TestCase):
                          ["36 2 2", "4 4 N", "20 2 N"])
         manifest = json.loads((self.bundle / "bundle.json").read_text())
         self.assertEqual(next(iter(manifest)), "bundle_format_version")
-        self.assertEqual(manifest["bundle_format_version"], 2)
+        self.assertEqual(manifest["bundle_format_version"], 3)
         self.assertEqual(manifest["fasta"], "reference.fa")
+        annotation = manifest["annotation"]
+        self.assertEqual(annotation["software_version"], "116.3")
+        self.assertEqual(annotation["cache_version"], 116)
+        self.assertEqual(annotation["species"], "homo_sapiens_refseq")
+        for key in ("refseq_version", "mane_version"):
+            self.assertTrue(annotation[key])
+        for relative in ("reference.fa", "reference.fa.fai", "chr_synonyms.txt",
+                         "compatibility.json", "resource_metadata.json",
+                         "cache/homo_sapiens_refseq/116_GRCh38/info.txt"):
+            self.assertTrue((self.bundle / "annotation" / relative).is_file())
+        self.assertEqual((self.bundle / "annotation/reference.fa").read_text(),
+                         ">1 description\nACGTACGTACGTACGTACGT\n>2\nTTTTCCCCAAAAGGGG\n")
         self.assertEqual(manifest["bwamem2_index"], "bwamem2/reference.fa")
         self.assertEqual(manifest["omitted_exclusions_bed_entries"], [])
         self.assertEqual(manifest["sources"]["fasta"]["uri"], str(self.fasta))
@@ -225,7 +249,7 @@ class ReferencePreparationTests(unittest.TestCase):
         self.assertCountEqual(observed, ['RETRY\t1\t1\t1073741824\t600000',
                                          'RETRY\t2\t1\t1073741824\t600000'])
         manifest = json.loads((self.bundle / 'bundle.json').read_text())
-        self.assertEqual(manifest['bundle_format_version'], 2)
+        self.assertEqual(manifest['bundle_format_version'], 3)
         self.assertEqual((self.bundle / 'reference.fa').read_text(),
                          '>chr1\nACGTNNNNACGTACGTACGT\n>chr2\nNNTTCCCCAAAAGGGG\n')
         for artifact, checksum in manifest['checksums'].items():
@@ -236,7 +260,7 @@ class ReferencePreparationTests(unittest.TestCase):
             names = [row["name"].split(":")[-1] for row in csv.DictReader(handle, delimiter="\t")]
         expected = [f"{process} ({label})" for process in
                     ["REFERENCE_VALIDATE", "BEDTOOLS_MASKFASTA", "BWAMEM2_INDEX", "SAMTOOLS_FAIDX",
-                     "PICARD_CREATESEQUENCEDICTIONARY", "REFERENCE_BUNDLE"]]
+                     "PICARD_CREATESEQUENCEDICTIONARY", "REFERENCE_BUNDLE", "ANNOTATION_FAIDX", "ANNOTATION_PREPARE"]]
         if compressed:
             expected.append(f"GUNZIP ({label})")
         if downloads:
@@ -257,6 +281,28 @@ class ReferencePreparationTests(unittest.TestCase):
                 self.assertEqual(manifest["fasta"], "reference.fa")
                 self.assertEqual(manifest["bwamem2_index"], "bwamem2/reference.fa")
         self.assertEqual(requests, {"/source.fa.gz?download=1": 1, "/exclusions.bed": 1})
+
+    def test_annotation_sources_reuse_verified_downloads_across_preparations(self):
+        with self.http_sources() as (base, requests, payloads):
+            payloads["/annotation.fa"] = b">1\nACGTACGTACGTACGTACGT\n>2\nTTTTCCCCAAAAGGGG\n"
+            payloads["/refseq-cache.tar.gz"] = CACHE.read_bytes()
+            expected = {name: hashlib.sha256(payloads[path]).hexdigest()
+                        for name, path in [("annotation_fasta", "/annotation.fa"),
+                                           ("vep_cache", "/refseq-cache.tar.gz")]}
+            for destination in ["first", "second"]:
+                self.bundle = self.directory / destination
+                result = self.prepare(
+                    "--annotation_fasta", f"{base}/annotation.fa", "--vep_cache", f"{base}/refseq-cache.tar.gz",
+                    "--annotation_fasta_sha256", expected["annotation_fasta"],
+                    "--vep_cache_sha256", expected["vep_cache"],
+                    "--downloads_dir", str(self.directory / "downloads"))
+                self.assertEqual(result.returncode, 0, result.stdout)
+                manifest = json.loads((self.bundle / "bundle.json").read_text())
+                for kind, digest in expected.items():
+                    self.assertEqual(manifest["sources"][kind]["sha256"], digest)
+                    self.assertEqual(manifest["sources"][kind]["verified_checksum"], f"sha256:{digest}")
+                    self.assertTrue(manifest["sources"][kind]["uri"].startswith(base))
+            self.assertEqual(requests, {"/annotation.fa": 1, "/refseq-cache.tar.gz": 1})
 
     def test_reference_label_uses_builtin_fasta_basename(self):
         base = ("https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/"

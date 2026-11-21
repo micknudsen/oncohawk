@@ -17,6 +17,34 @@ class WorkflowDispatchTests(unittest.TestCase):
             os.environ.get("NEXTFLOW", "nextflow"), *config, "run", str(PROJECT), *arguments,
         ], cwd=directory, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
+    def test_older_bundles_require_explicit_annotation_resource_rebuild(self):
+        with tempfile.TemporaryDirectory() as directory:
+            bundle = Path(directory) / "old-bundle"
+            bundle.mkdir()
+            (bundle / "bundle.json").write_text(json.dumps({"bundle_format_version": 2}))
+            result = self.run_workflow(directory, ["--input", "missing.csv",
+                                                   "--reference_bundle", str(bundle)])
+            self.assertNotEqual(result.returncode, 0, result.stdout)
+            self.assertIn("Rebuild explicitly with --workflow prepare_reference_bundle", result.stdout)
+            self.assertNotIn("Submitted process", result.stdout)
+            self.assertNotIn("missing.csv", result.stdout)
+
+    def test_annotation_ready_bundle_requires_matching_tool_cache_identity(self):
+        for annotation in [None, {}, {"software_version": "115", "cache_version": 115},
+                           {"software_version": "116.3", "cache_version": 116,
+                            "species": "homo_sapiens_merged", "assembly": "GRCh38"}]:
+            with self.subTest(annotation=annotation), tempfile.TemporaryDirectory() as directory:
+                bundle = Path(directory) / "bundle"
+                bundle.mkdir()
+                (bundle / "bundle.json").write_text(json.dumps({
+                    "bundle_format_version": 3, "annotation": annotation,
+                }))
+                result = self.run_workflow(directory, ["--input", "missing.csv",
+                                                       "--reference_bundle", str(bundle)])
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertIn("Reference bundle requires compatible VEP 116.3 / RefSeq cache 116", result.stdout)
+                self.assertNotIn("Submitted process", result.stdout)
+
     def test_profile_parameter_suggests_native_option_before_missing_inputs(self):
         with tempfile.TemporaryDirectory() as directory:
             result = subprocess.run([

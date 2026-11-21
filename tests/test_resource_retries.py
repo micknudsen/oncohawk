@@ -10,6 +10,7 @@ import unittest
 
 PROJECT = Path(__file__).resolve().parents[1]
 ALIGNMENT_REQUESTS = {
+    'ENSEMBLVEP_VEP': [(2, 8, 12), (4, 16, 24)],
     'GATK4_MUTECT2': [(2, 8, 24), (4, 16, 48)],
     'GATK4_FILTERMUTECTCALLS': [(1, 4, 4), (1, 8, 8)],
     'CUTADAPT': [(4, 8, 4), (8, 16, 8)],
@@ -19,6 +20,9 @@ ALIGNMENT_REQUESTS = {
     'SAMTOOLS_INDEX': [(2, 4, 4), (4, 8, 8)],
 }
 REFERENCE_REQUESTS = {
+    'ANNOTATION_GUNZIP': [(1, 4, 2), (1, 8, 4)],
+    'ANNOTATION_FAIDX': [(1, 4, 4), (1, 8, 8)],
+    'ANNOTATION_PREPARE': [(1, 4, 8), (1, 8, 16)],
     'SAMTOOLS_FAIDX': [(1, 4, 4), (1, 8, 8)],
     'PICARD_CREATESEQUENCEDICTIONARY': [(1, 4, 4), (1, 8, 8)],
     'REFERENCE_DOWNLOAD': [(1, 2, 24), (1, 4, 48)],

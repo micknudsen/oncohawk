@@ -8,6 +8,7 @@ process REFERENCE_BUNDLE {
     path fai
     path dict
     path validation
+    path annotation
     val metadata
     val versions
     path packager
@@ -18,6 +19,6 @@ process REFERENCE_BUNDLE {
 
     script:
     """
-    python3 '${packager}' '${fasta}' '${index}' '${fai}' '${dict}' '${validation}' '${metadata}' '${versions}'
+    python3 '${packager}' '${fasta}' '${index}' '${fai}' '${dict}' '${validation}' '${annotation}' '${metadata}' '${versions}'
     """
 }

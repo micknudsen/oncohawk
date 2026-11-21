@@ -1,6 +1,6 @@
 # Prepare a reference bundle
 
-The reference-preparation entry point, `nextflow run . --workflow prepare_reference_bundle`, validates reference inputs, decompresses a gzipped FASTA, hard-masks BED intervals with `N`, and builds bwa-mem2 indexes, a FASTA index, and a sequence dictionary from that exact masked sequence. It publishes the reusable bundle after successful validation and tool execution. This selection runs only reference preparation; it needs no sample sheet and does not run analysis. Selecting `prepare_knowledge_bundle` instead fails immediately because knowledge compilation is deferred. Replace `.` with the checkout path to launch from another directory; relative input and output paths resolve from the launch directory.
+The reference-preparation entry point, `nextflow run . --workflow prepare_reference_bundle`, validates reference inputs, decompresses a gzipped FASTA, hard-masks BED intervals with `N`, and builds bwa-mem2 indexes, a FASTA index, and a sequence dictionary from that exact masked sequence. It also prepares a matching RefSeq-only VEP cache and a separate unmasked Ensembl annotation FASTA/index, validates compatibility, and publishes the reusable bundle after successful validation and tool execution. This selection runs only reference preparation; it needs no sample sheet and does not run analysis. Selecting `prepare_knowledge_bundle` instead fails immediately because knowledge compilation is deferred. Replace `.` with the checkout path to launch from another directory; relative input and output paths resolve from the launch directory.
 
 ## Runtime pins
 
@@ -25,6 +25,10 @@ Nextflow profile with `-profile` (one dash); `--profile` fails with a correction
 | --- | --- |
 | `--fasta` | Local `.fa`/`.fa.gz` or a downloadable FASTA URL. Defaults to the selected NCBI no-ALT analysis set below. |
 | `--exclusions_bed` | Local exclusions BED or downloadable BED URL. Defaults to the matching NCBI exclusions below. |
+| `--annotation_fasta` | Local unmasked `.fa`/`.fa.gz` or URL; defaults to Ensembl release-116 GRCh38 primary assembly. This is separate from the alignment FASTA. |
+| `--vep_cache` | Local `.tar.gz` or URL containing a genuine compatible human GRCh38 RefSeq-only cache 116. |
+| `--annotation_fasta_sha256`, `--vep_cache_sha256` | Expected SHA256 for custom annotation sources; hashes cover original compressed bytes. Official source checksums are fixed. |
+| `--annotation_fasta_identity`, `--vep_cache_identity` | Optional dataset/release/assembly identity objects for custom sources, following the existing source-identity rules. RefSeq versions come from cache metadata; MANE provenance comes separately from pinned matching-release core metadata. |
 | `--outdir` | New directory for the completed bundle; default `reference`. Choose a fresh destination for each bundle. |
 | `--downloads_dir` | Persistent source-download store on a local/shared filesystem; default `downloads` relative to the launch directory. Independent of `-work-dir` and `--outdir`. |
 | `--download_ca_bundle` | Optional local/shared PEM file containing additional trusted CA certificates. Defaults to `SSL_CERT_FILE` from the launch environment when set. Staged into download containers. |
@@ -103,12 +107,17 @@ example.mkdir(parents=True, exist_ok=True)
 with gzip.open(example / 'small.fa.gz', 'wt') as handle:
     handle.write('>chr1\nACGTACGTACGTACGTACGT\n>chr2\nTTTTCCCCAAAAGGGG\n')
 (example / 'exclusions.bed').write_text('chr1\t4\t8\nchr2\t0\t2\n')
+(example / 'annotation.fa').write_text('>1\nACGTACGTACGTACGTACGT\n>2\nTTTTCCCCAAAAGGGG\n')
 PY
 nextflow run . --workflow prepare_reference_bundle -profile docker,test \
   --fasta .local/reference-example/small.fa.gz \
   --exclusions_bed .local/reference-example/exclusions.bed \
+  --annotation_fasta .local/reference-example/annotation.fa \
+  --vep_cache tests/data/vep116/refseq-cache.tar.gz \
   --outdir .local/reference-example/bundle
 ```
+
+This synthetic 36-base example exercises bundle preparation, not biological consequences. The committed real-cache/sequence fixture and public annotation tests establish those separately. All example inputs above are local; no whole-human resources are downloaded.
 
 The `docker` profile uses `--platform=linux/amd64`, including on Apple Silicon. The `test` profile limits local execution to two CPUs and 4 GiB total task memory, with at most one task per process; the indexing task requests 2 GiB. These settings serve compact fixtures, not the human reference.
 
@@ -159,7 +168,28 @@ reference/
 │   ├── reference.fa.ann
 │   ├── reference.fa.bwt.2bit.64
 │   └── reference.fa.pac
+├── annotation/
+│   ├── reference.fa
+│   ├── reference.fa.fai
+│   ├── chr_synonyms.txt
+│   ├── compatibility.json
+│   ├── resource_metadata.json
+│   └── cache/homo_sapiens_refseq/116_GRCh38/...
 └── bundle.json
 ```
 
-`bundle.json` starts with `bundle_format_version: 2`, identifying the format of the entire reference bundle, followed by relative `fasta`, `fasta_index`, `sequence_dictionary`, and `bwamem2_index` paths, SHA256 artifact checksums, source URIs and checksums under `sources.fasta` and `sources.exclusions_bed`, sequence lengths, omitted BED entries, tool/module versions, and workflow identity/source hashes. Source hashes use repository-relative paths and cover reference-preparation sources and shared files used by preparation, including the root dispatcher and configuration. Analysis-only and knowledge-only workflow/configuration sources are excluded; changing them does not change the reference source-hash inventory or values. The module inventory records only reference modules, so analysis-only module-pin changes do not change reference source identity; the mixed `modules.json` file is not hashed wholesale. The repository commit is recorded separately. Format 1 bundles must be rebuilt explicitly; no legacy conversion is provided. The FASTA index and dictionary derive from the masked FASTA, and the dictionary uses the portable `reference.fa` URI. The bwa-mem2 index path is a prefix; all five index files accompany it. Keep the manifest and artifacts together when moving a bundle. A process failure is a failed preparation, not a completed bundle; inspect the Nextflow task log before retrying into a new output destination.
+`bundle.json` starts with `bundle_format_version: 3`, identifying the format of the entire reference bundle, followed by relative `fasta`, `fasta_index`, `sequence_dictionary`, and `bwamem2_index` paths, SHA256 artifact checksums, source URIs and checksums under `sources.fasta`, `sources.exclusions_bed`, `sources.annotation_fasta`, and `sources.vep_cache`, sequence lengths, omitted BED entries, tool/module versions, and workflow identity/source hashes. Source hashes use repository-relative paths and cover reference-preparation sources and shared files used by preparation, including the root dispatcher and configuration. Analysis-only and knowledge-only workflow/configuration sources are excluded; changing them does not change the reference source-hash inventory or values. The module inventory records only reference modules, so analysis-only module-pin changes do not change reference source identity; the mixed `modules.json` file is not hashed wholesale. The repository commit is recorded separately. Format 1 and 2 bundles must be rebuilt explicitly; no legacy conversion is provided. The FASTA index and dictionary derive from the masked FASTA, and the dictionary uses the portable `reference.fa` URI. The bwa-mem2 index path is a prefix; all five index files accompany it. Keep the manifest and artifacts together when moving a bundle. A process failure is a failed preparation, not a completed bundle; inspect the Nextflow task log before retrying into a new output destination.
+
+## Annotation resources and compatibility
+
+The selected consumer is VEP **116.3**, installed through the pristine `ensemblvep/vep` module at `20c6e6407f63748003b47f92837b64fb0a53ffa4`. The image is `community.wave.seqera.io/library/ensembl-vep_perl-math-cdf_htslib_gzip_tar:43f77a48cc79bf38`, qualified with digest `sha256:2294ff1ab149218bb9337722d3fbde0844a290874c7adec6121ff92d856c3729`. The bundle records expected consumer identity separately from versions of tools actually executed during preparation.
+
+Production sources are the [RefSeq-only cache 116](https://ftp.ensembl.org/pub/release-116/variation/indexed_vep_cache/homo_sapiens_refseq_vep_116_GRCh38.tar.gz) and the [unmasked GRCh38 primary-assembly FASTA](https://ftp.ensembl.org/pub/release-116/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz). The cache archive's SHA256 is `0427dd48d05d15be2486ceffff047be8153ea5e7b65391918d25efcb054f7f77`. The FASTA's original compressed SHA256 is `d8c3af0094a7bba6125763bad779ec18a81483c739c6ed122094bdf86c187b92`. Source URLs/checksums and RefSeq/MANE data versions are retained separately from Ensembl release 116. The cache declares RefSeq `GCF_000001405.40-RS_2025_08 - GCF_000001405.40_GRCh38.p14_genomic.gff`. Its original `info.txt` does not declare a MANE version: **MANE v1.5** comes from matching [release-116 core metadata](https://ftp.ensembl.org/pub/release-116/mysql/homo_sapiens_core_116_38/meta.txt.gz), whose SHA256 is `b4755176b563f043c12770ece6e27d7dba729579101d76144732917732b0686e`; the manifest records that separate provenance without editing the cache metadata. The NCBI alignment input and masked result are preserved exactly.
+
+Preparation checks unambiguous contig aliases, equal lengths for mapped contigs, and agreement of every corresponding known A/C/G/T genomic base. It recognizes exact names, UCSC primary-chromosome aliases, and accession-based UCSC scaffold equivalents; patch scaffolds are not treated as chromosome aliases. It rejects ambiguous aliases, length disagreements, and differing known bases. Unmatched contigs on both sides are recorded, and at least one corresponding contig is required. There is no liftover or REF repair.
+
+Assembly-gap policy is explicit: an `N` in an original genomic source is an unknown assembly base. Source-only, annotation-only, and shared `N` positions are counted in `annotation/compatibility.json`; a gap does not assert agreement of a known base. Imposed masking is counted separately by comparing the original alignment source with the masked alignment FASTA. Known-base changes outside masking are rejected. Lowercase genomic bases are compared case-insensitively. These checks establish correspondence on known mapped bases, not complete annotation coverage of every contig.
+
+The annotation FASTA index is built once during preparation, and all cache files and annotation assets receive SHA256 entries. Paths in the manifest remain portable. Sample processing uses these existing resources and does not rebuild their indexes. Default analysis validates metadata, paths, and file inventory without reading the full FASTA/cache contents; `--verify_bundle_checksums` verifies all artifact bytes before reads are processed, including on resume.
+
+All four remote sources use the same persistent download-store integrity checks, proxy handling, and trusted-CA configuration. A new bundle can reuse verified source downloads independently of Nextflow work-directory reuse. This does not promise that every alignment-index task will be reused after a bundle or pipeline update. Large resource validation and publication still require I/O and disk space; the cache archive and extracted cache are separate disk requirements.

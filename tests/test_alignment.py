@@ -12,6 +12,8 @@ import subprocess
 import tempfile
 import unittest
 
+from annotation_fixture import annotation_arguments
+
 
 PROJECT = Path(__file__).resolve().parents[1]
 SAMTOOLS = "community.wave.seqera.io/library/htslib_samtools:1.25--704fb80d75745bd4"
@@ -44,6 +46,7 @@ class AlignmentTests(unittest.TestCase):
         result = subprocess.run([
             os.environ.get("NEXTFLOW", "nextflow"), "run", str(PROJECT), "--workflow", "prepare_reference_bundle",
             "-profile", "docker,test", "--fasta", str(fasta), "--exclusions_bed", str(bed),
+            *annotation_arguments(cls.reference_directory, fasta.read_bytes()),
             "--outdir", str(cls.bundle),
         ], cwd=cls.reference_directory, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         (cls.reference_directory / "preparation.log").write_text(result.stdout)
@@ -118,7 +121,9 @@ class AlignmentTests(unittest.TestCase):
             ])
             if variants:
                 expected.extend([f"samples/{sample}/variants", f"samples/{sample}/variants/{sample}.mutect2.vcf.gz",
-                                 f"samples/{sample}/variants/{sample}.mutect2.vcf.gz.tbi"])
+                                 f"samples/{sample}/variants/{sample}.mutect2.vcf.gz.tbi",
+                                 f"samples/{sample}/variants/{sample}.mutect2.vep.vcf.gz",
+                                 f"samples/{sample}/variants/{sample}.mutect2.vep.vcf.gz.tbi"])
         self.assertEqual(sorted(str(path.relative_to(self.output)) for path in self.output.rglob("*")),
                          sorted(expected))
 
@@ -172,6 +177,18 @@ class AlignmentTests(unittest.TestCase):
             SAMTOOLS, "tabix", "/data/samples/S1/variants/S1.mutect2.vcf.gz", "chr1:1501-1501",
         ], text=True)
         self.assertEqual(query.split("\t")[:2], ["chr1", "1501"])
+        annotated = self.output / "samples/S1/variants/S1.mutect2.vep.vcf.gz"
+        with gzip.open(annotated, "rt") as handle:
+            annotated_lines = handle.read().splitlines()
+        self.assertTrue(any(line.startswith("##INFO=<ID=CSQ,") for line in annotated_lines))
+        annotated_records = [line.split("\t") for line in annotated_lines if not line.startswith("#")]
+        self.assertEqual([row[:7] + row[8:] for row in annotated_records],
+                         [row[:7] + row[8:] for row in records])
+        query = subprocess.check_output([
+            "docker", "run", "--rm", "--platform=linux/amd64", "-v", f"{self.output}:/data:ro",
+            SAMTOOLS, "tabix", "/data/samples/S1/variants/S1.mutect2.vep.vcf.gz", "chr1:1501-1501",
+        ], text=True)
+        self.assertEqual(query.split("\t")[:2], ["chr1", "1501"])
 
     def test_retains_rejected_calls_and_isolates_a_no_call_sample(self):
         generator = random.Random(161803)
@@ -217,6 +234,18 @@ class AlignmentTests(unittest.TestCase):
             query = subprocess.check_output([
                 "docker", "run", "--rm", "--platform=linux/amd64", "-v", f"{self.output}:/data:ro",
                 SAMTOOLS, "tabix", f"/data/samples/{sample}/variants/{sample}.mutect2.vcf.gz", "chr1:1501-1501",
+            ], text=True)
+            self.assertEqual(bool(query), sample == "Rejected")
+            annotated = self.output / f"samples/{sample}/variants/{sample}.mutect2.vep.vcf.gz"
+            with gzip.open(annotated, "rt") as handle:
+                annotated_lines = handle.read().splitlines()
+            self.assertEqual(next(line for line in annotated_lines if line.startswith("#CHROM")).split("\t")[9:], [sample])
+            annotated_records = [line.split("\t") for line in annotated_lines if not line.startswith("#")]
+            self.assertEqual([row[:7] + row[8:] for row in annotated_records],
+                             [row[:7] + row[8:] for row in records])
+            query = subprocess.check_output([
+                "docker", "run", "--rm", "--platform=linux/amd64", "-v", f"{self.output}:/data:ro",
+                SAMTOOLS, "tabix", f"/data/samples/{sample}/variants/{sample}.mutect2.vep.vcf.gz", "chr1:1501-1501",
             ], text=True)
             self.assertEqual(bool(query), sample == "Rejected")
 
@@ -526,6 +555,46 @@ class AlignmentTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertEqual(self.samtools("view", "-c", "/data/samples/input1.mapped/alignments/input1.mapped.bam").strip(), "2")
         self.assertIn("\tSM:input1.mapped", self.samtools("view", "-H", "/data/samples/input1.mapped/alignments/input1.mapped.bam"))
+
+    def test_annotation_failure_retains_original_calls_and_completed_other_sample(self):
+        pairs = [("pair", self.chr1[100:250], reverse_complement(self.chr1[350:500]))]
+        rows = []
+        for sample in ["S1", "S2"]:
+            self.r1 = self.directory / f"{sample}_R1.fastq.gz"
+            self.r2 = self.directory / f"{sample}_R2.fastq.gz"
+            self.reads(pairs)
+            rows.append(dict(sample=sample, library="L1", flowcell="FC1", lane="1",
+                             fastq_1=str(self.r1), fastq_2=str(self.r2)))
+        self.sample_rows(rows)
+        failure = self.directory / "annotation-failure.config"
+        failure.write_text("process { withName: ENSEMBLVEP_VEP {\n"
+                           "  maxForks = 2\n"
+                           "  beforeScript = { meta.sample == 'S2' ? \""
+                           "for attempt in {1..60}; do "
+                           f"if test -s '{self.output}/samples/S1/variants/S1.mutect2.vep.vcf.gz.tbi' "
+                           f"&& test -s '{self.output}/samples/S2/variants/S2.mutect2.vcf.gz.tbi'; then exit 17; fi; "
+                           "sleep 1; done; exit 18\" : '' }\n"
+                           "} }\n")
+        result = self.align(config=failure)
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("Error executing process > 'ONCOHAWK:ENSEMBLVEP_VEP (S2)'", result.stdout)
+        self.assertIn("17", result.stdout)
+        for sample in ["S1", "S2"]:
+            self.assert_bam_pairs(pairs, sample=sample)
+            names = [f"{sample}.mutect2.vcf.gz"]
+            if sample == "S1":
+                names.append(f"{sample}.mutect2.vep.vcf.gz")
+            for name in names:
+                path = self.output / f"samples/{sample}/variants/{name}"
+                with gzip.open(path, "rt") as handle:
+                    header = next(line for line in handle if line.startswith("#CHROM"))
+                self.assertEqual(header.rstrip().split("\t")[9:], [sample])
+                query = subprocess.check_output([
+                    "docker", "run", "--rm", "--platform=linux/amd64", "-v", f"{self.output}:/data:ro",
+                    SAMTOOLS, "tabix", f"/data/samples/{sample}/variants/{name}", "chr1:1-6000",
+                ], text=True)
+                self.assertEqual(query, "")
+        self.assertFalse((self.output / "samples/S2/variants/S2.mutect2.vep.vcf.gz").exists())
 
     def test_already_trimmed_input_names_are_preserved(self):
         self.r1 = self.directory / "input1_1.trim.fastq.gz"
@@ -1031,7 +1100,7 @@ class AlignmentTests(unittest.TestCase):
                     self.assertNotIn("Submitted process", result.stdout)
             result = self.align(arguments=["--verify_bundle_checksums", "--input", str(missing_sheet)])
             self.assertNotEqual(result.returncode, 0, result.stdout)
-            self.assertIn("reference.fa", result.stdout)
+            self.assertTrue(any(str(path) in result.stdout for path in artifacts), result.stdout)
             self.assertNotIn(f"No such file or directory: {missing_sheet}", result.stdout)
             self.assertNotIn("Submitted process", result.stdout)
         finally:

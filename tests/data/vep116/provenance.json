@@ -1,0 +1,42 @@
+{
+  "vep_version": "116.3",
+  "cache_release": 116,
+  "assembly": "GRCh38",
+  "species": "homo_sapiens",
+  "cache_type": "refseq",
+  "cache_url": "https://ftp.ensembl.org/pub/release-116/variation/indexed_vep_cache/homo_sapiens_refseq_vep_116_GRCh38.tar.gz",
+  "cache_sha256": "0427dd48d05d15be2486ceffff047be8153ea5e7b65391918d25efcb054f7f77",
+  "refseq_source": "GCF_000001405.40-RS_2025_08 - GCF_000001405.40_GRCh38.p14_genomic.gff",
+  "mane_version": "MANE v1.5",
+  "mane_metadata_url": "https://ftp.ensembl.org/pub/release-116/mysql/homo_sapiens_core_116_38/meta.txt.gz",
+  "mane_metadata_sha256": "b4755176b563f043c12770ece6e27d7dba729579101d76144732917732b0686e",
+  "primary_fasta_url": "https://ftp.ensembl.org/pub/release-116/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz",
+  "primary_fasta_sha256": "d8c3af0094a7bba6125763bad779ec18a81483c739c6ed122094bdf86c187b92",
+  "fixture_fasta_source_url": "https://ftp.ensembl.org/pub/release-116/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.chromosome.1.fa.gz",
+  "fixture_fasta_source_sha256": "05d4d42ed292962055afb9774a1a29a691d7b285fd85dbf9069c050a273e0d3c",
+  "fixture_contig": "1",
+  "fixture_length": 46100000,
+  "exact_sequence_intervals_1based_inclusive": [
+    [
+      900001,
+      2100000
+    ],
+    [
+      44900001,
+      46100000
+    ]
+  ],
+  "outside_intervals": "N padding; no coordinate rewriting",
+  "sha256": {
+    "aliases.tsv": "bed60598eb62e7e18aa5fc654cc4296f713f17fb0b5c96d81fc5d3c47e317b55",
+    "annotation.fa.gz": "70dcdd49c2cf6081282e05b8d51abfbe67904e9ffe2cf41e955ea08e982f1f24",
+    "cache/homo_sapiens_refseq/116_GRCh38/1/1000001-2000000.gz": "41d25e08339646d091c2327f39228136a01c07666affd6e5deef68e0b11bae25",
+    "cache/homo_sapiens_refseq/116_GRCh38/1/45000001-46000000.gz": "8d4bbaf99387e7be446612740db5c4eb87d499257590c4e30082bcacd7022043",
+    "cache/homo_sapiens_refseq/116_GRCh38/chr_synonyms.txt": "5ea93e7c8cb1894947b618cfd8e0110f3c4fe06a4c360a547c7dcfd65e0ec3a5",
+    "cache/homo_sapiens_refseq/116_GRCh38/info.txt": "7617f75e190e0edca85be0ab5f470974209fd21177184072f327ba83f0133e9a",
+    "cases.vcf": "54b884e35aa5ac2234f697e97b0c0a4d3e15e5df2a3c657acc4bde015f311483",
+    "refseq-cache.tar.gz": "1e2fa84ba88eb9b76ea46372ae05d65c555c6859c2574cd991330311b01664ec"
+  },
+  "qualification": "Real Docker VEP116.3 passed; complete production archive SHA256 computed; all four fixture cache members match full sequential archive extraction byte-for-byte",
+  "cache_size_bytes": 26409563680
+}

@@ -1,6 +1,6 @@
 # Analyze samples from paired FASTQs
 
-The Oncohawk workflow, selected by `nextflow run .` or explicitly by `nextflow run . --workflow oncohawk`, accepts a [prepared reference bundle](reference-bundle.md) and a sample sheet with one row per gzipped FASTQ pair. It applies shared Cutadapt adapter removal and length filtering, maps each pair with bwa-mem2, and combines rows into one coordinate-sorted, indexed BAM per sample. Duplicate detection considers all lanes of each library together, keeps distinct libraries separate, and retains duplicate records with their flags set. It then runs tumor-only Mutect2 and FilterMutectCalls for each sample, retaining both PASS and rejected records in a compressed, indexed VCF.
+The Oncohawk workflow, selected by `nextflow run .` or explicitly by `nextflow run . --workflow oncohawk`, accepts a [prepared reference bundle](reference-bundle.md) and a sample sheet with one row per gzipped FASTQ pair. It applies shared Cutadapt adapter removal and length filtering, maps each pair with bwa-mem2, and combines rows into one coordinate-sorted, indexed BAM per sample. Duplicate detection considers all lanes of each library together, keeps distinct libraries separate, and retains duplicate records with their flags set. It then runs tumor-only Mutect2 and FilterMutectCalls for each sample, retaining both PASS and rejected records in a compressed, indexed VCF. Offline VEP then creates a second indexed VCF containing RefSeq consequences without replacing the original callset.
 
 It consumes the prepared reference bundle without running bundle preparation, and it requires no knowledge bundle for this analysis. Relative paths passed to `--input`, `--reference_bundle`, and `--outdir` resolve from the launch directory; paths within the sample sheet follow the rule below. Replace `.` with the checkout path when launching outside it.
 
@@ -66,7 +66,7 @@ nextflow run . -profile docker,test \
   --outdir /path/to/new-results
 ```
 
-`--reference_bundle` points to the directory containing format-2 `bundle.json`, `reference.fa`, `reference.fa.fai`, `reference.dict`, and the bwa-mem2 indexes. `--outdir` must be a fresh output directory. The Docker profile selects `linux/amd64` containers, including on Apple Silicon; the test profile limits local execution to two CPUs and 4 GiB total task memory. Use compact references locally and full-human-reference inputs on the production cluster.
+`--reference_bundle` points to the directory containing format-3 `bundle.json`, `reference.fa`, `reference.fa.fai`, `reference.dict`, the bwa-mem2 indexes, and the prepared `annotation/` subtree. `--outdir` must be a fresh output directory. The Docker profile selects `linux/amd64` containers, including on Apple Silicon; the test profile limits local execution to two CPUs and 4 GiB total task memory. Use compact references locally and full-human-reference inputs on the production cluster.
 
 Analysis accepts only `workflow`, `input`, `reference_bundle`,
 `verify_bundle_checksums`, and `outdir` as pipeline parameter names. Unsupported
@@ -77,14 +77,14 @@ parameter/configuration files and previously ignored custom parameters. Use
 correction. Existing output-directory protection can report an error first.
 
 Before processing reads, alignment validates the bundle manifest's structure,
-supported format version 2, artifact paths, and required checksum entries. It
-checks that the FASTA, FASTA index, dictionary, and all five bwa-mem2 index files exist as regular files. Normal
+supported format version 3, artifact paths, and required checksum entries. It
+checks that the alignment artifacts and all annotation artifacts, including the complete declared RefSeq-cache file inventory, exist as regular files. Software/cache identity and annotation paths are required; older bundles must be rebuilt explicitly. Normal
 startup does not read artifact contents or calculate checksums. Sample-sheet and
 FASTQ path checks also complete before Cutadapt submission; they do not validate
 FASTQ contents.
 
 Add `--verify_bundle_checksums` to an `oncohawk` run to verify SHA-256 checksums
-of the FASTA, FASTA index, dictionary, and all five bwa-mem2 index files against the manifest before processing
+of every alignment and annotation artifact, including all cache contents, against the manifest before processing
 reads. The option defaults to off; `--verify_bundle_checksums false` explicitly
 keeps lightweight validation. Verification streams one file at a time in the
 Nextflow launcher on the submission host, with bounded memory, once per invocation
@@ -104,21 +104,35 @@ Coordinate-sorted row BAMs are grouped by sample and passed to samtools merge in
 
 ## Tumor-only small variants
 
-Each completed duplicate-marked BAM/index feeds the pristine nf-core `gatk4/mutect2` module, followed by `gatk4/filtermutectcalls`. Both use GATK **4.7.0.0**, pinned in the upstream modules installed through nf-core CLI **4.2.1** at `20c6e6407f63748003b47f92837b64fb0a53ffa4`. FilterMutectCalls receives the caller's statistics, VCF/index, and the same masked reference, FASTA index, and sequence dictionary. Its compressed output and tabix index are named `<sample>.mutect2.vcf.gz` and `<sample>.mutect2.vcf.gz.tbi`, retaining both sample identity and the caller name. They form the final deliverable; calling/filtering statistics stay in task work directories.
+Each completed duplicate-marked BAM/index feeds the pristine nf-core `gatk4/mutect2` module, followed by `gatk4/filtermutectcalls`. Both use GATK **4.7.0.0**, pinned in the upstream modules installed through nf-core CLI **4.2.1** at `20c6e6407f63748003b47f92837b64fb0a53ffa4`. FilterMutectCalls receives the caller's statistics, VCF/index, and the same masked reference, FASTA index, and sequence dictionary. Its compressed output and tabix index are named `<sample>.mutect2.vcf.gz` and `<sample>.mutect2.vcf.gz.tbi`, retaining both sample identity and the caller name. They remain independently published caller deliverables; calling/filtering statistics stay in task work directories.
 
 Calling and filtering use tool defaults with required input/output wiring. No germline resource, panel of normals, known-sites/hotspot dataset, contamination estimation, orientation-bias model, BQSR, or custom filtering thresholds are added. The VCF retains every final called record with its FILTER labels, including failed filters; no PASS-only file is generated. PASS means the candidate passed these tool filters. Tumor-only calls can include germline variants and artifacts and are **not confirmed somatic variants**.
 
 The two GATK tasks use native Nextflow task-local scratch. GATK 4.7.0.0's [temporary-directory conversion](https://github.com/broadinstitute/gatk/blob/4.7.0.0/src/main/java/org/broadinstitute/hellbender/utils/io/IOUtils.java#L825) percent-encodes spaces while setting `java.io.tmpdir`, breaking temporary codec-resource extraction under a spaced task work path. Scratch keeps the pristine modules' `--tmp-dir .` local to the temporary task directory while Nextflow stages inputs and copies completed outputs back to the work directory. User launch/output directories may still contain spaces.
 
-The execution environment's temporary/scratch root must be writable, have sufficient capacity for GATK temporary data and staged outputs, and use a path without spaces or other URI-escaped characters. `scratch = true` uses Nextflow's native temporary-directory selection; a site-specific `scratch` selector may choose an appropriate node-local location. A custom `TMPDIR` containing spaces can reproduce the upstream problem. This is per-task runtime configuration, not a scientific calling/filtering option.
+VEP also uses native task-local scratch because the pristine module expands its cache path from an unquoted working-directory variable. This preserves support for launch paths containing spaces without modifying the upstream module.
+
+The execution environment's temporary/scratch root must be writable, have sufficient capacity for GATK/VEP temporary data and staged outputs, and use a path without spaces or other URI-escaped characters. `scratch = true` uses Nextflow's native temporary-directory selection; a site-specific `scratch` selector may choose an appropriate node-local location. A custom `TMPDIR` containing spaces can reproduce the upstream problem. This is per-task runtime configuration, not a scientific calling/filtering option.
 
 GATK tasks appear in enabled diagnostics. Resource overrides use `GATK4_MUTECT2` and `GATK4_FILTERMUTECTCALLS` selectors in the existing analysis configuration. SLURM defaults are starting allocations, not full-reference measurements; the existing bounded retry policy applies. No new public workflow or BAM-input mode is introduced.
+
+## Offline RefSeq consequence annotation
+
+Every completed FilterMutectCalls callset feeds the pristine nf-core `ensemblvep/vep` module at `20c6e6407f63748003b47f92837b64fb0a53ffa4`, using VEP **116.3** and a matching human GRCh38 **RefSeq-only cache 116**. Analysis never downloads resources. The prepared unmasked annotation FASTA, its existing index, and explicit contig aliases supply sequence context; alignment and calling continue to use the exact masked alignment FASTA. These shared bundle assets are inputs, not sample-time index destinations.
+
+VEP annotates directly against versioned known RefSeq **NM_** and **NR_** transcripts. It excludes **XM_** and **XR_** models, retains every eligible consequence, and includes both MANE Select and Plus Clinical metadata. There is no MANE-only filter or representative-consequence picking. Native `CSQ` has a header describing its fields, including available gene identifiers/symbols, consequences, HGVSc/HGVSp, and native RefSeq correction information. Missing MANE and inapplicable fields are allowed; noncoding transcripts need not have protein descriptions.
+
+The separate `<sample>.mutect2.vep.vcf.gz` and `.tbi` preserve input records, alleles, genotype/sample fields, and caller FILTER labels, including rejected and model-only records. Empty callsets remain valid indexed VCFs. `--check_ref --dont_skip` requests native reference checks while retaining records: a reference mismatch may yield a warning or CHECK_REF rather than a nonzero exit. Unsupported contigs and empty CSQ do not identify a unique failure reason. No REF repair, custom per-record status, population-frequency, clinical-database, pathogenicity, or treatment enrichment is added.
+
+Native warnings and skipped-record messages go to STDERR in the VEP task's `.command.err` and combined `.command.log`. Retain the Nextflow work directory to preserve them; no dedicated warning sidecar is published. Actual process errors fail the workflow. Annotation failure can leave an already valid original callset and BAM, and other completed samples retain their own outputs; this does not constitute successful annotation of the failed sample.
+
+Consequences describe sequence effects. They do not establish somatic origin, pathogenicity, treatment significance, or a clinical report. MANE metadata identifies transcript relationships for later expert review.
 
 ## Outputs and failures
 
 The default output root is `results`; use `--outdir` to choose a different fresh destination. Relative overrides resolve from the launch directory. Quote paths containing spaces. Each sample's BAM and index are grouped under `samples/<sample>/alignments/`, retaining the sample ID in both filenames. An override changes only the root; it does not change the sample hierarchy. Existing output roots, including empty directories, are rejected before processing, preserving previous results.
 
-For the two samples in the example, successful completion publishes one BAM/index and one VCF/index per sample:
+For the two samples in the example, successful completion publishes one BAM/index, the original VCF/index, and the annotated VCF/index per sample:
 
 ```text
 results/
@@ -129,14 +143,18 @@ results/
     │   │   └── S1.bam.bai
     │   └── variants/
     │       ├── S1.mutect2.vcf.gz
-    │       └── S1.mutect2.vcf.gz.tbi
+    │       ├── S1.mutect2.vcf.gz.tbi
+    │       ├── S1.mutect2.vep.vcf.gz
+    │       └── S1.mutect2.vep.vcf.gz.tbi
     └── S2/
         ├── alignments/
         │   ├── S2.bam
         │   └── S2.bam.bai
         └── variants/
             ├── S2.mutect2.vcf.gz
-            └── S2.mutect2.vcf.gz.tbi
+            ├── S2.mutect2.vcf.gz.tbi
+            ├── S2.mutect2.vep.vcf.gz
+            └── S2.mutect2.vep.vcf.gz.tbi
 ```
 
 For example, `--outdir /path/to/new-results` places S1's BAM at `/path/to/new-results/samples/S1/alignments/S1.bam`. No flat duplicate BAMs or empty report directories are published. With diagnostics disabled, the tree above contains the entire published analysis output; there is no `execution` directory.
