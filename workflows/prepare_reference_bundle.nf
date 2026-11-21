@@ -1,3 +1,6 @@
+include { GUNZIP as ANNOTATION_GUNZIP } from '../modules/nf-core/gunzip/main'
+include { SAMTOOLS_FAIDX as ANNOTATION_FAIDX } from '../modules/nf-core/samtools/faidx/main'
+include { ANNOTATION_PREPARE } from '../modules/local/annotation_prepare'
 include { GUNZIP } from '../modules/nf-core/gunzip/main'
 include { BEDTOOLS_MASKFASTA } from '../modules/nf-core/bedtools/maskfasta/main'
 include { SAMTOOLS_FAIDX } from '../modules/nf-core/samtools/faidx/main'
@@ -63,15 +66,35 @@ workflow PREPARE_REFERENCE_BUNDLE {
     ncbi_base = 'https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/'
     official_fasta = params.fasta == ncbi_base + 'GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.gz'
     official_exclusions_bed = params.exclusions_bed == ncbi_base + 'GCA_000001405.15_GRCh38_GRC_exclusions.bed'
+    ensembl_base = 'https://ftp.ensembl.org/pub/release-116/'
+    official_annotation = params.annotation_fasta == ensembl_base + 'fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz'
+    official_cache = params.vep_cache == ensembl_base + 'variation/indexed_vep_cache/homo_sapiens_refseq_vep_116_GRCh38.tar.gz'
     reference_label = referenceLabel(params.fasta)
     checksums = [
         fasta: [md5: official_fasta ? 'a08035b6a6e31780e96a34008ff21bd6' : null, sha256: params.fasta_sha256],
-        exclusions_bed: [md5: official_exclusions_bed ? 'bf5c011e0342f355422144eb3547b5d0' : null, sha256: params.exclusions_bed_sha256]
+        exclusions_bed: [md5: official_exclusions_bed ? 'bf5c011e0342f355422144eb3547b5d0' : null, sha256: params.exclusions_bed_sha256],
+        annotation_fasta: [sha256: official_annotation ? 'd8c3af0094a7bba6125763bad779ec18a81483c739c6ed122094bdf86c187b92' : params.annotation_fasta_sha256],
+        vep_cache: [sha256: official_cache ? '0427dd48d05d15be2486ceffff047be8153ea5e7b65391918d25efcb054f7f77' : params.vep_cache_sha256]
     ]
+    if (official_annotation && params.annotation_fasta_sha256 &&
+        params.annotation_fasta_sha256.toString().toLowerCase() != checksums.annotation_fasta.sha256)
+        error('Official Ensembl annotation FASTA checksum is fixed; do not override it')
+    if (official_cache && params.vep_cache_sha256 &&
+        params.vep_cache_sha256.toString().toLowerCase() != checksums.vep_cache.sha256)
+        error('Official Ensembl RefSeq cache checksum is fixed; do not override it')
     policy = encoded(checksums)
     identities = [fasta: sourceIdentity(params.fasta_identity, official_fasta),
                   exclusions_bed: sourceIdentity(params.exclusions_bed_identity, official_exclusions_bed)]
-    sources = [fasta: params.fasta.toString(), exclusions_bed: params.exclusions_bed.toString()]
+    identities.annotation_fasta = sourceIdentity(params.annotation_fasta_identity, false)
+    identities.vep_cache = sourceIdentity(params.vep_cache_identity, false)
+    if ((official_annotation && identities.annotation_fasta) || (official_cache && identities.vep_cache))
+        error('Official Ensembl source identity is fixed; do not supply an identity override')
+    if (official_annotation)
+        identities.annotation_fasta = [dataset: 'Ensembl unmasked primary assembly', release: '116', assembly: 'GRCh38']
+    if (official_cache)
+        identities.vep_cache = [dataset: 'Ensembl RefSeq-only VEP cache', release: '116', assembly: 'GRCh38']
+    sources = [fasta: params.fasta.toString(), exclusions_bed: params.exclusions_bed.toString(),
+               annotation_fasta: params.annotation_fasta.toString(), vep_cache: params.vep_cache.toString()]
     remote = sources.findAll { _kind, uri -> uri ==~ /(?i)^(https?|ftp):\/\/.*/ }
     local = sources.findAll { kind, _uri -> !remote.containsKey(kind) }
     if (local.any { _kind, uri -> uri ==~ /(?i)^(?!file:)[a-z][a-z0-9+.-]*:\/\/.*/ })
@@ -97,6 +120,14 @@ workflow PREPARE_REFERENCE_BUNDLE {
     }.mix(channel.fromList(local.collect { kind, uri -> [kind, referenceInput(uri)] }))
     fasta = acquired.filter { kind, _path -> kind == 'fasta' }.map { _kind, path -> path }
     exclusions_bed = acquired.filter { kind, _path -> kind == 'exclusions_bed' }.map { _kind, path -> path }
+    annotation_archive = acquired.filter { kind, _path -> kind == 'annotation_fasta' }.map { _kind, path -> path }
+    cache_archive = acquired.filter { kind, _path -> kind == 'vep_cache' }.map { _kind, path -> path }
+    annotation_inputs = annotation_archive.branch { path ->
+        compressed: path.name.endsWith('.gz')
+        plain: true
+    }
+    ANNOTATION_GUNZIP(annotation_inputs.compressed.map { path -> [[id: 'annotation', reference_label: reference_label], path] })
+    annotation_fasta = ANNOTATION_GUNZIP.out.gunzip.map { _meta, path -> path }.mix(annotation_inputs.plain)
     inputs = fasta.branch { path ->
         compressed: path.name.endsWith('.gz')
         plain: true
@@ -104,9 +135,18 @@ workflow PREPARE_REFERENCE_BUNDLE {
     GUNZIP(inputs.compressed.map { path -> [[id: 'reference', reference_label: reference_label], path] })
     uncompressed = GUNZIP.out.gunzip.map { _meta, path -> path }.mix(inputs.plain)
     REFERENCE_VALIDATE(uncompressed, exclusions_bed, fasta, policy, file("$repository/bin/validate_reference.py"), reference_label)
+    ANNOTATION_FAIDX(annotation_fasta.combine(REFERENCE_VALIDATE.out.report).map { path, _report ->
+        [[id: 'annotation', reference_label: reference_label], path, []]
+    }, false)
     BEDTOOLS_MASKFASTA(REFERENCE_VALIDATE.out.exclusions_bed.map { path ->
         [[id: 'reference', reference_label: reference_label], path]
     }, REFERENCE_VALIDATE.out.fasta)
+    ANNOTATION_PREPARE(
+        REFERENCE_VALIDATE.out.fasta, BEDTOOLS_MASKFASTA.out.fasta.map { _meta, path -> path },
+        annotation_fasta, ANNOTATION_FAIDX.out.fai.map { _meta, path -> path },
+        annotation_archive, cache_archive, policy,
+        [file("$repository/bin/prepare_annotation.py"), file("$repository/bin/validate_reference.py")], reference_label
+    )
     BWAMEM2_INDEX(BEDTOOLS_MASKFASTA.out.fasta)
     SAMTOOLS_FAIDX(BEDTOOLS_MASKFASTA.out.fasta.map { meta, path -> [meta, path, []] }, false)
     PICARD_CREATESEQUENCEDICTIONARY(BEDTOOLS_MASKFASTA.out.fasta)
@@ -115,8 +155,8 @@ workflow PREPARE_REFERENCE_BUNDLE {
         'main.nf', 'nextflow.config', 'workflows/prepare_reference_bundle.nf',
         'conf/prepare_reference_bundle.config', 'conf/prepare_reference_bundle_resources.config',
         'conf/common.config', 'conf/slurm.config',
-        'bin/validate_reference.py', 'bin/package_reference.py', 'bin/download_reference.py',
-        'modules/local/reference_validate.nf', 'modules/local/reference_bundle.nf', 'modules/local/reference_download.nf',
+        'bin/validate_reference.py', 'bin/package_reference.py', 'bin/download_reference.py', 'bin/prepare_annotation.py',
+        'modules/local/annotation_prepare.nf', 'modules/local/reference_validate.nf', 'modules/local/reference_bundle.nf', 'modules/local/reference_download.nf',
         'modules/nf-core/gunzip/main.nf', 'modules/nf-core/bedtools/maskfasta/main.nf',
         'modules/nf-core/bwamem2/index/main.nf',
         'modules/nf-core/samtools/faidx/main.nf', 'modules/nf-core/picard/createsequencedictionary/main.nf'
@@ -134,13 +174,14 @@ workflow PREPARE_REFERENCE_BUNDLE {
     ])
     versions = GUNZIP.out.versions_gunzip
         .mix(BEDTOOLS_MASKFASTA.out.versions_bedtools, BWAMEM2_INDEX.out.versions_bwamem2,
-             SAMTOOLS_FAIDX.out.versions_samtools, PICARD_CREATESEQUENCEDICTIONARY.out.versions_picard)
+             SAMTOOLS_FAIDX.out.versions_samtools, PICARD_CREATESEQUENCEDICTIONARY.out.versions_picard,
+             ANNOTATION_GUNZIP.out.versions_gunzip, ANNOTATION_FAIDX.out.versions_samtools)
         .collect(flat: false).map { entries -> encoded(entries) }
     REFERENCE_BUNDLE(
         BEDTOOLS_MASKFASTA.out.fasta.map { _meta, path -> path }, BWAMEM2_INDEX.out.index.map { _meta, path -> path },
         SAMTOOLS_FAIDX.out.fai.map { _meta, path -> path },
         PICARD_CREATESEQUENCEDICTIONARY.out.reference_dict.map { _meta, path -> path },
-        REFERENCE_VALIDATE.out.report, metadata, versions, file("$repository/bin/package_reference.py"), reference_label
+        REFERENCE_VALIDATE.out.report, ANNOTATION_PREPARE.out.assets, metadata, versions, file("$repository/bin/package_reference.py"), reference_label
     )
 
     emit:

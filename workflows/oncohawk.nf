@@ -1,3 +1,4 @@
+include { ENSEMBLVEP_VEP } from '../modules/nf-core/ensemblvep/vep/main'
 include { CUTADAPT } from '../modules/nf-core/cutadapt/main'
 include { BWAMEM2_MEM } from '../modules/nf-core/bwamem2/mem/main'
 include { SAMTOOLS_MERGE } from '../modules/nf-core/samtools/merge/main'
@@ -43,17 +44,40 @@ def alignmentReference(value, verify_checksums) {
     def manifest = root.resolve('bundle.json')
     if (!manifest.isFile())
         error('Reference bundle must contain bundle.json')
-    def bundle = new groovy.json.JsonSlurper().parseText(manifest.text)
-    if (!(bundle instanceof Map) || bundle.bundle_format_version != 2)
-        error('Unsupported reference-bundle bundle_format_version; expected 2')
+    def bundle
+    try {
+        bundle = new groovy.json.JsonSlurper().parseText(manifest.text)
+    } catch (Exception ignored) {
+        error('Reference bundle has malformed bundle.json; rebuild explicitly with --workflow prepare_reference_bundle')
+    }
+    if (!(bundle instanceof Map) || bundle.bundle_format_version != 3)
+        error('Unsupported reference-bundle bundle_format_version; expected 3. Rebuild explicitly with --workflow prepare_reference_bundle to include annotation resources')
+    def annotation = bundle.annotation
+    if (!(annotation instanceof Map) || annotation.software_version != '116.3' ||
+        annotation.cache_version != 116 || annotation.species != 'homo_sapiens_refseq' ||
+        annotation.assembly != 'GRCh38')
+        error('Reference bundle requires compatible VEP 116.3 / RefSeq cache 116 for human GRCh38; rebuild with --workflow prepare_reference_bundle')
     if (bundle.fasta != 'reference.fa' || bundle.bwamem2_index != 'bwamem2/reference.fa' ||
         bundle.fasta_index != 'reference.fa.fai' || bundle.sequence_dictionary != 'reference.dict')
-        error('Reference-bundle artifact paths do not match bundle_format_version 2')
+        error('Reference-bundle artifact paths do not match bundle_format_version 3')
+    if (annotation.fasta != 'annotation/reference.fa' || annotation.fasta_index != 'annotation/reference.fa.fai' ||
+        annotation.cache != 'annotation/cache' || annotation.synonyms != 'annotation/chr_synonyms.txt' ||
+        annotation.compatibility != 'annotation/compatibility.json' ||
+        !(annotation.refseq_version instanceof String) || !annotation.refseq_version.trim() ||
+        !(annotation.mane_version instanceof String) || !annotation.mane_version.trim())
+        error('Reference-bundle annotation paths or data versions are malformed; rebuild with --workflow prepare_reference_bundle')
     def artifacts = ['reference.fa', 'reference.fa.fai', 'reference.dict'] + ['.0123', '.amb', '.ann', '.bwt.2bit.64', '.pac']
         .collect { suffix -> "bwamem2/reference.fa${suffix}".toString() }
-    if (!(bundle.checksums instanceof Map) || bundle.checksums.keySet() != artifacts.toSet())
-        error('Reference bundle must checksum its FASTA, FASTA index, sequence dictionary and all five bwa-mem2 indexes')
-    artifacts.each { relative ->
+    artifacts += ['annotation/reference.fa', 'annotation/reference.fa.fai', 'annotation/chr_synonyms.txt',
+                  'annotation/compatibility.json', 'annotation/resource_metadata.json',
+                  'annotation/cache/homo_sapiens_refseq/116_GRCh38/info.txt']
+    if (!(bundle.checksums instanceof Map) || !bundle.checksums.keySet().containsAll(artifacts) ||
+        bundle.checksums.any { relative, checksum ->
+            !(relative instanceof String) || !(checksum instanceof String) || !(checksum ==~ /[0-9a-f]{64}/) ||
+            relative.startsWith('/') || relative.tokenize('/').any { it in ['.', '..'] } || relative.contains('\\')
+        })
+        error('Reference bundle must checksum its FASTA, FASTA index, sequence dictionary and all five bwa-mem2 indexes, plus every annotation asset')
+    bundle.checksums.keySet().each { relative ->
         def path = root.resolve(relative)
         if (!path.isFile())
             error("Reference-bundle artifact missing: ${relative}")
@@ -66,8 +90,18 @@ def alignmentReference(value, verify_checksums) {
                 error("Reference-bundle checksum mismatch: ${relative}")
         }
     }
+    def cache = root.resolve('annotation/cache/homo_sapiens_refseq/116_GRCh38')
+    if (!cache.isDirectory())
+        error('Reference-bundle RefSeq cache missing; rebuild with --workflow prepare_reference_bundle')
+    def cache_files = java.nio.file.Files.walk(cache).withCloseable { paths ->
+        paths.filter { java.nio.file.Files.isRegularFile(it) }.map { root.relativize(it).toString() }.toList()
+    }
+    if (!cache_files.any { it.endsWith('.gz') } || bundle.checksums.keySet() != (artifacts + cache_files).toSet())
+        error('Reference-bundle cache contents do not match its checksum inventory; rebuild with --workflow prepare_reference_bundle')
     return [root.resolve('reference.fa'), root.resolve('bwamem2'),
-            root.resolve('reference.fa.fai'), root.resolve('reference.dict')]
+            root.resolve('reference.fa.fai'), root.resolve('reference.dict'),
+            root.resolve('annotation/reference.fa'), root.resolve('annotation/reference.fa.fai'),
+            root.resolve('annotation/cache'), root.resolve('annotation/chr_synonyms.txt')]
 }
 
 def sampleInputs(table, sheet) {
@@ -172,7 +206,14 @@ workflow ONCOHAWK {
         channel.value([[:], reference[3]])
     )
 
+    filtered = GATK4_FILTERMUTECTCALLS.out.vcf.join(GATK4_FILTERMUTECTCALLS.out.tbi)
+    ENSEMBLVEP_VEP(
+        filtered.map { meta, vcf, _tbi -> [meta, vcf, []] },
+        'GRCh38', 'homo_sapiens', '116', channel.value([[:], reference[6]]),
+        channel.value([[:], reference[4]]), channel.value([reference[5], reference[7]]), [[], []]
+    )
+
     emit:
     samples = completed
-    variants = GATK4_FILTERMUTECTCALLS.out.vcf.join(GATK4_FILTERMUTECTCALLS.out.tbi)
+    variants = filtered.mix(ENSEMBLVEP_VEP.out.vcf.join(ENSEMBLVEP_VEP.out.tbi))
 }

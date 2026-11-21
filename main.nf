@@ -11,7 +11,9 @@ workflow {
     supported = ['workflow', 'outdir'] + (params.workflow == 'oncohawk'
         ? ['input', 'reference_bundle', 'verify_bundle_checksums']
         : ['fasta', 'exclusions_bed', 'downloads_dir', 'download_ca_bundle',
-           'fasta_sha256', 'exclusions_bed_sha256', 'fasta_identity', 'exclusions_bed_identity'])
+           'fasta_sha256', 'exclusions_bed_sha256', 'fasta_identity', 'exclusions_bed_identity',
+           'annotation_fasta', 'vep_cache', 'annotation_fasta_sha256', 'vep_cache_sha256',
+           'annotation_fasta_identity', 'vep_cache_identity'])
     if (params.workflow == 'oncohawk') {
         if (!(params._oncohawk_output_path instanceof java.net.URI))
             error('Invalid internal output-directory state; do not override _oncohawk_output_path')
