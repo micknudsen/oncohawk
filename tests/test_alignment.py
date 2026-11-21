@@ -1100,7 +1100,7 @@ class AlignmentTests(unittest.TestCase):
                     self.assertNotIn("Submitted process", result.stdout)
             result = self.align(arguments=["--verify_bundle_checksums", "--input", str(missing_sheet)])
             self.assertNotEqual(result.returncode, 0, result.stdout)
-            self.assertIn("reference.fa", result.stdout)
+            self.assertTrue(any(str(path) in result.stdout for path in artifacts), result.stdout)
             self.assertNotIn(f"No such file or directory: {missing_sheet}", result.stdout)
             self.assertNotIn("Submitted process", result.stdout)
         finally:
