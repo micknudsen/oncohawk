@@ -10,12 +10,11 @@ process REFERENCE_DOWNLOAD {
     }
 
     input:
-    tuple val(kind), val(asset)
+    tuple val(kind), val(asset), val(source_label)
     val downloads_dir
     path downloader
     path ca_bundle, stageAs: 'download-ca.pem'
     val proxy_environment
-    val reference_label
 
     output:
     tuple val(kind), path('download.json'), emit: source

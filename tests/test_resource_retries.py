@@ -61,6 +61,7 @@ class ResourceRetryTests(unittest.TestCase):
                 val meta
                 val reference_label
                 val kind
+                val source_label
                 script:
                 """
                 printf 'RESOURCE\\t{name}\\t${{task.attempt}}\\t${{task.cpus}}\\t${{task.memory.toBytes()}}\\t${{task.time.toMillis()}}\\n'
@@ -68,7 +69,7 @@ class ResourceRetryTests(unittest.TestCase):
                 """
             }}''')
         script.write_text('\n'.join(processes) + '\nworkflow {\n' + '\n'.join(
-            f"{name}([task_label: 'probe', sample: 'probe'], 'probe', 'fasta')" for name in names
+            f"{name}([task_label: 'probe', sample: 'probe'], 'probe', 'fasta', 'probe.fa.gz')" for name in names
         ) + '\n}\n')
         config = directory / 'probe.config'
         config.write_text(

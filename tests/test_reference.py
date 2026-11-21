@@ -255,7 +255,7 @@ class ReferencePreparationTests(unittest.TestCase):
         for artifact, checksum in manifest['checksums'].items():
             self.assertEqual(hashlib.sha256((self.bundle / artifact).read_bytes()).hexdigest(), checksum)
 
-    def assert_reference_labels(self, label, downloads=False, compressed=True):
+    def assert_reference_labels(self, label, downloads=(), compressed=True):
         with (self.directory / f"trace-{self.run_count}.tsv").open() as handle:
             names = [row["name"].split(":")[-1] for row in csv.DictReader(handle, delimiter="\t")]
         expected = [f"{process} ({label})" for process in
@@ -263,8 +263,7 @@ class ReferencePreparationTests(unittest.TestCase):
                      "PICARD_CREATESEQUENCEDICTIONARY", "REFERENCE_BUNDLE", "ANNOTATION_FAIDX", "ANNOTATION_PREPARE"]]
         if compressed:
             expected.append(f"GUNZIP ({label})")
-        if downloads:
-            expected.extend(f"REFERENCE_DOWNLOAD ({label} / {kind})" for kind in ["fasta", "exclusions_bed"])
+        expected.extend(f"REFERENCE_DOWNLOAD ({filename} / {kind})" for kind, filename in downloads)
         self.assertCountEqual(names, expected)
 
     def test_reference_labels_use_url_basename_and_preserve_download_reuse(self):
@@ -275,7 +274,8 @@ class ReferencePreparationTests(unittest.TestCase):
                 self.bundle = self.directory / destination
                 result = self.prepare()
                 self.assertEqual(result.returncode, 0, result.stdout)
-                self.assert_reference_labels("source.fa.gz", downloads=True)
+                self.assert_reference_labels("source.fa.gz", downloads=[
+                    ("fasta", "source.fa.gz"), ("exclusions_bed", "exclusions.bed")])
                 manifest = json.loads((self.bundle / "bundle.json").read_text())
                 self.assertEqual(manifest["sources"]["fasta"]["identity"], {})
                 self.assertEqual(manifest["fasta"], "reference.fa")
@@ -292,17 +292,20 @@ class ReferencePreparationTests(unittest.TestCase):
             for destination in ["first", "second"]:
                 self.bundle = self.directory / destination
                 result = self.prepare(
-                    "--annotation_fasta", f"{base}/annotation.fa", "--vep_cache", f"{base}/refseq-cache.tar.gz",
+                    "--annotation_fasta", f"{base}/annotation.fa?download=1#annotation",
+                    "--vep_cache", f"{base}/refseq-cache.tar.gz?download=1#cache",
                     "--annotation_fasta_sha256", expected["annotation_fasta"],
                     "--vep_cache_sha256", expected["vep_cache"],
                     "--downloads_dir", str(self.directory / "downloads"))
                 self.assertEqual(result.returncode, 0, result.stdout)
+                self.assert_reference_labels("source.fa.gz", downloads=[
+                    ("annotation_fasta", "annotation.fa"), ("vep_cache", "refseq-cache.tar.gz")])
                 manifest = json.loads((self.bundle / "bundle.json").read_text())
                 for kind, digest in expected.items():
                     self.assertEqual(manifest["sources"][kind]["sha256"], digest)
                     self.assertEqual(manifest["sources"][kind]["verified_checksum"], f"sha256:{digest}")
                     self.assertTrue(manifest["sources"][kind]["uri"].startswith(base))
-            self.assertEqual(requests, {"/annotation.fa": 1, "/refseq-cache.tar.gz": 1})
+            self.assertEqual(requests, {"/annotation.fa?download=1": 1, "/refseq-cache.tar.gz?download=1": 1})
 
     def test_reference_label_uses_builtin_fasta_basename(self):
         base = ("https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/"
@@ -322,8 +325,9 @@ class ReferencePreparationTests(unittest.TestCase):
             names = [row["name"].split(":")[-1] for row in csv.DictReader(handle, delimiter="\t")]
         self.assertTrue(names)
         label = "GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.gz"
+        bed_label = "GCA_000001405.15_GRCh38_GRC_exclusions.bed"
         self.assertTrue(set(names) <= {f"REFERENCE_DOWNLOAD ({label} / fasta)",
-                                       f"REFERENCE_DOWNLOAD ({label} / exclusions_bed)"}, names)
+                                       f"REFERENCE_DOWNLOAD ({bed_label} / exclusions_bed)"}, names)
 
     def test_defaults_to_reference_in_launch_directory(self):
         result = self.prepare(default_output=True)
