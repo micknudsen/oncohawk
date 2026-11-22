@@ -86,6 +86,23 @@ class AnnotationPreparationTests(unittest.TestCase):
         self.assertIn("Annotation input error: unexplained genomic-base disagreement at chr1:5 (1:5)", result.stdout)
         self.assertFalse((self.bundle / "bundle.json").exists())
 
+    def test_prepares_references_with_iupac_ambiguity_codes(self):
+        # chr1:248752514 in the default pair has alignment M and annotation N.
+        self.source.write_text(">chr1\nMmRYSWKMBDHVN\n>chr2\nRa\n")
+        self.annotation.write_text(">1\nNArYSWKMBDHVA\n>2\nRA\n")
+        result = self.prepare()
+        self.assertEqual(result.returncode, 0, result.stdout)
+        report = json.loads((self.bundle / "annotation/compatibility.json").read_text())
+        first, second = report["contigs"]
+        self.assertEqual(first["compatible_ambiguous_bases"], 11)
+        self.assertEqual(first["matching_known_bases"], 0)
+        self.assertEqual(first["source_gap_bases"], 1)
+        self.assertEqual(first["annotation_gap_bases"], 1)
+        self.assertEqual(second["matching_known_bases"], 1)
+        self.assertEqual(second["compatible_ambiguous_bases"], 1)
+        self.assertEqual(report["alignment_masked_bases"]["chr1"], 1)
+        self.assertEqual((self.bundle / "annotation/reference.fa").read_bytes(), self.annotation.read_bytes())
+
     def test_prepares_portable_annotation_assets_with_separate_resource_versions(self):
         source_bytes = self.source.read_bytes()
         annotation_bytes = self.annotation.read_bytes()
@@ -133,7 +150,7 @@ class AnnotationPreparationTests(unittest.TestCase):
         self.assertEqual(report["unmatched_annotation_contigs"], {"HG123_PATCH": 4})
         chromosome = next(contig for contig in report["contigs"] if contig["alignment"] == "chr1")
         self.assertEqual(chromosome, {"alignment": "chr1", "annotation": "1", "length": 10,
-                                      "matching_known_bases": 7, "source_gap_bases": 1,
+                                      "matching_known_bases": 7, "compatible_ambiguous_bases": 0, "source_gap_bases": 1,
                                       "annotation_gap_bases": 1, "shared_gap_bases": 1})
         self.assertIn("N", report["assembly_gap_policy"])
         self.assertEqual((self.bundle / "annotation/reference.fa").read_bytes(), self.annotation.read_bytes())
@@ -153,6 +170,7 @@ class AnnotationPreparationTests(unittest.TestCase):
             (">chr1\nACGTACGT\n>1\nACGTACGT\n", ">1\nACGTACGT\n", "ambiguous contig aliases"),
             (">chr1\nACGTACGT\n", ">1\nACGTACGT\n>chr1\nACGTACGT\n", "ambiguous contig aliases"),
             (">chr1\nACGTACGT\n", ">1\nAAGTACGT\n", "unexplained genomic-base disagreement at chr1:2"),
+            (">chr1\nARGTACGT\n", ">1\nAYGTACGT\n", "unexplained genomic-base disagreement at chr1:2"),
         ]
         for source, annotation, message in cases:
             with self.subTest(message=message):

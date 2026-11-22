@@ -14,6 +14,14 @@ from validate_reference import source_checksums
 
 
 CACHE_ROOT = PurePosixPath("homo_sapiens_refseq/116_GRCh38")
+IUPAC_BASES = {
+    ord(code): frozenset(bases) for code, bases in {
+        "A": "A", "C": "C", "G": "G", "T": "T", "R": "AG", "Y": "CT",
+        "S": "CG", "W": "AT", "K": "GT", "M": "AC", "B": "CGT", "D": "AGT",
+        "H": "ACT", "V": "ACG", "N": "ACGT",
+    }.items()
+}
+DNA_ALPHABET = bytes(IUPAC_BASES)
 
 
 def fasta_index(path):
@@ -41,8 +49,12 @@ def fasta_index(path):
             else:
                 sequence = b"".join(line.split()).upper()
                 if sequence:
-                    if name is None or sequence.translate(None, b"ACGTN"):
-                        raise ValueError(f"FASTA must contain named A/C/G/T/N sequences: {path.name}")
+                    if name is None:
+                        raise ValueError(f"FASTA sequence before first header in {path.name}")
+                    invalid = sequence.translate(None, DNA_ALPHABET)
+                    if invalid:
+                        coordinate = records[name]["length"] + sequence.index(invalid[:1]) + 1
+                        raise ValueError(f"invalid DNA IUPAC symbol {invalid[:1]!r} at {name}:{coordinate} in {path.name}")
                     records[name]["length"] += len(sequence)
     if not records or any(not record["length"] for record in records.values()):
         raise ValueError(f"FASTA must contain nonempty sequences: {path.name}")
@@ -108,24 +120,33 @@ def compare_references(source_path, masked_path, annotation_path):
         if record["length"] != annotation_index[target]["length"]:
             raise ValueError(f"contig length mismatch for '{name}' and '{target}'")
         counts = {"alignment": name, "annotation": target, "length": record["length"],
-                  "matching_known_bases": 0, "source_gap_bases": 0,
+                  "matching_known_bases": 0, "compatible_ambiguous_bases": 0, "source_gap_bases": 0,
                   "annotation_gap_bases": 0, "shared_gap_bases": 0}
         offset = 0
         for source, annotation in zip(sequence_chunks(source_path, record),
                                       sequence_chunks(annotation_path, annotation_index[target])):
             if source == annotation:
                 shared = source.count(b"N")
+                ambiguous = len(source.translate(None, b"ACGTN"))
                 counts["shared_gap_bases"] += shared
-                counts["matching_known_bases"] += len(source) - shared
+                counts["compatible_ambiguous_bases"] += ambiguous
+                counts["matching_known_bases"] += len(source) - shared - ambiguous
             else:
                 for (left, right), count in Counter(zip(source, annotation)).items():
-                    if left != right and left != ord("N") and right != ord("N"):
+                    if IUPAC_BASES[left].isdisjoint(IUPAC_BASES[right]):
                         coordinate = offset + next(index for index, pair in enumerate(zip(source, annotation))
                                                    if pair == (left, right)) + 1
                         raise ValueError(f"unexplained genomic-base disagreement at {name}:{coordinate} ({target}:{coordinate})")
-                    category = ("shared_gap_bases" if left == right == ord("N") else
-                                "source_gap_bases" if left == ord("N") else
-                                "annotation_gap_bases" if right == ord("N") else "matching_known_bases")
+                    if left == right == ord("N"):
+                        category = "shared_gap_bases"
+                    elif left == ord("N"):
+                        category = "source_gap_bases"
+                    elif right == ord("N"):
+                        category = "annotation_gap_bases"
+                    elif left == right and left in b"ACGT":
+                        category = "matching_known_bases"
+                    else:
+                        category = "compatible_ambiguous_bases"
                     counts[category] += count
             offset += len(source)
         contigs.append(counts)
@@ -139,7 +160,7 @@ def compare_references(source_path, masked_path, annotation_path):
                                         if name not in aliases},
         "unmatched_annotation_contigs": {name: record["length"] for name, record in annotation_index.items()
                                          if name not in aliases.values()},
-        "assembly_gap_policy": "N denotes an unknown assembly base. N versus A/C/G/T is recorded as a gap difference; differing known bases are rejected. Shared N bases are counted separately. No bases are repaired.",
+        "assembly_gap_policy": "N denotes an unknown assembly base. Source, annotation and shared N positions are counted as gaps. Other IUPAC codes must share a possible base. Compatible ambiguous positions are counted separately from exact A/C/G/T matches.",
     }
 
 
