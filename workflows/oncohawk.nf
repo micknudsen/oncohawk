@@ -1,11 +1,11 @@
-include { ENSEMBLVEP_VEP } from '../modules/nf-core/ensemblvep/vep/main'
-include { CUTADAPT } from '../modules/nf-core/cutadapt/main'
-include { BWAMEM2_MEM } from '../modules/nf-core/bwamem2/mem/main'
-include { SAMTOOLS_MERGE } from '../modules/nf-core/samtools/merge/main'
-include { PICARD_MARKDUPLICATES } from '../modules/nf-core/picard/markduplicates/main'
-include { GATK4_MUTECT2 } from '../modules/nf-core/gatk4/mutect2/main'
-include { GATK4_FILTERMUTECTCALLS } from '../modules/nf-core/gatk4/filtermutectcalls/main'
-include { SAMTOOLS_INDEX } from '../modules/nf-core/samtools/index/main'
+include { ENSEMBLVEP_VEP as VARIANT_CONSEQUENCES_ANNOTATE } from '../modules/nf-core/ensemblvep/vep/main'
+include { CUTADAPT as READS_TRIM } from '../modules/nf-core/cutadapt/main'
+include { BWAMEM2_MEM as READS_ALIGN } from '../modules/nf-core/bwamem2/mem/main'
+include { SAMTOOLS_MERGE as SAMPLE_ALIGNMENTS_MERGE } from '../modules/nf-core/samtools/merge/main'
+include { PICARD_MARKDUPLICATES as SAMPLE_DUPLICATES_MARK } from '../modules/nf-core/picard/markduplicates/main'
+include { GATK4_MUTECT2 as VARIANTS_CALL } from '../modules/nf-core/gatk4/mutect2/main'
+include { GATK4_FILTERMUTECTCALLS as VARIANTS_FILTER } from '../modules/nf-core/gatk4/filtermutectcalls/main'
+include { SAMTOOLS_INDEX as SAMPLE_BAM_INDEX } from '../modules/nf-core/samtools/index/main'
 
 def inputOptions(value, row_number) {
     def options = [:]
@@ -182,32 +182,32 @@ workflow ONCOHAWK {
         .splitCsv(quote: '"').toList()
         .map { table -> sampleInputs(table, sheet) }
         .flatMap { rows -> rows }
-    CUTADAPT(inputs)
-    BWAMEM2_MEM(CUTADAPT.out.reads, channel.value([[id: 'reference'], reference.bwamem2]),
+    READS_TRIM(inputs)
+    READS_ALIGN(READS_TRIM.out.reads, channel.value([[id: 'reference'], reference.bwamem2]),
                 channel.value([[id: 'reference'], reference.alignment_fasta]), true)
-    sample_bams = BWAMEM2_MEM.out.bam
+    sample_bams = READS_ALIGN.out.bam
         .map { meta, bam -> [[id: meta.sample, sample: meta.sample], bam] }
         .groupTuple()
         .map { meta, bams -> [meta, bams.sort { it.name }, []] }
-    SAMTOOLS_MERGE(sample_bams, channel.value([[:], [], [], []]), '')
-    PICARD_MARKDUPLICATES(SAMTOOLS_MERGE.out.bam, channel.value([[:], [], []]))
-    SAMTOOLS_INDEX(PICARD_MARKDUPLICATES.out.bam)
-    completed = PICARD_MARKDUPLICATES.out.bam.join(SAMTOOLS_INDEX.out.index)
+    SAMPLE_ALIGNMENTS_MERGE(sample_bams, channel.value([[:], [], [], []]), '')
+    SAMPLE_DUPLICATES_MARK(SAMPLE_ALIGNMENTS_MERGE.out.bam, channel.value([[:], [], []]))
+    SAMPLE_BAM_INDEX(SAMPLE_DUPLICATES_MARK.out.bam)
+    completed = SAMPLE_DUPLICATES_MARK.out.bam.join(SAMPLE_BAM_INDEX.out.index)
 
-    GATK4_MUTECT2(
+    VARIANTS_CALL(
         completed.map { meta, bam, bai -> [meta, [bam], [bai], []] },
         channel.value([[:], reference.alignment_fasta]), channel.value([[:], reference.alignment_fai, []]),
         channel.value([[:], reference.alignment_dictionary]), [], [], [], [], [], []
     )
-    calls = GATK4_MUTECT2.out.vcf.join(GATK4_MUTECT2.out.tbi).join(GATK4_MUTECT2.out.stats)
-    GATK4_FILTERMUTECTCALLS(
+    calls = VARIANTS_CALL.out.vcf.join(VARIANTS_CALL.out.tbi).join(VARIANTS_CALL.out.stats)
+    VARIANTS_FILTER(
         calls.map { meta, vcf, tbi, stats -> [meta, vcf, tbi, stats, [], [], [], 0] },
         channel.value([[:], reference.alignment_fasta]), channel.value([[:], reference.alignment_fai]),
         channel.value([[:], reference.alignment_dictionary])
     )
 
-    filtered = GATK4_FILTERMUTECTCALLS.out.vcf.join(GATK4_FILTERMUTECTCALLS.out.tbi)
-    ENSEMBLVEP_VEP(
+    filtered = VARIANTS_FILTER.out.vcf.join(VARIANTS_FILTER.out.tbi)
+    VARIANT_CONSEQUENCES_ANNOTATE(
         filtered.map { meta, vcf, _tbi -> [meta, vcf, []] },
         'GRCh38', 'homo_sapiens', '116', channel.value([[:], reference.annotation_cache]),
         channel.value([[:], reference.annotation_fasta]), channel.value([reference.annotation_fai, reference.annotation_synonyms]), [[], []]
@@ -215,5 +215,5 @@ workflow ONCOHAWK {
 
     emit:
     samples = completed
-    variants = filtered.mix(ENSEMBLVEP_VEP.out.vcf.join(ENSEMBLVEP_VEP.out.tbi))
+    variants = filtered.mix(VARIANT_CONSEQUENCES_ANNOTATE.out.vcf.join(VARIANT_CONSEQUENCES_ANNOTATE.out.tbi))
 }

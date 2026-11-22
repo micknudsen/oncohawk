@@ -10,10 +10,10 @@ import unittest
 
 
 PROJECT = Path(__file__).resolve().parents[1]
-REFERENCE_PROCESSES = {"ANNOTATION_GUNZIP", "ANNOTATION_FAIDX", "ANNOTATION_PREPARE", "REFERENCE_DOWNLOAD", "GUNZIP", "REFERENCE_VALIDATE", "BEDTOOLS_MASKFASTA",
-                       "BWAMEM2_INDEX", "REFERENCE_BUNDLE", "SAMTOOLS_FAIDX", "PICARD_CREATESEQUENCEDICTIONARY"}
-ALIGNMENT_PROCESSES = {"ENSEMBLVEP_VEP", "CUTADAPT", "BWAMEM2_MEM", "SAMTOOLS_MERGE",
-                       "PICARD_MARKDUPLICATES", "SAMTOOLS_INDEX", "GATK4_MUTECT2", "GATK4_FILTERMUTECTCALLS"}
+REFERENCE_PROCESSES = {"ANNOTATION_FASTA_DECOMPRESS", "ANNOTATION_FASTA_INDEX", "ANNOTATION_PREPARE", "REFERENCE_DOWNLOAD", "ALIGNMENT_FASTA_DECOMPRESS", "REFERENCE_VALIDATE", "ALIGNMENT_FASTA_MASK",
+                       "ALIGNMENT_MAPPER_INDEX", "REFERENCE_BUNDLE_ASSEMBLE", "ALIGNMENT_FASTA_INDEX", "ALIGNMENT_SEQUENCE_DICTIONARY_CREATE"}
+ALIGNMENT_PROCESSES = {"VARIANT_CONSEQUENCES_ANNOTATE", "READS_TRIM", "READS_ALIGN", "SAMPLE_ALIGNMENTS_MERGE",
+                       "SAMPLE_DUPLICATES_MARK", "SAMPLE_BAM_INDEX", "VARIANTS_CALL", "VARIANTS_FILTER"}
 
 
 class PipelineConfigurationTests(unittest.TestCase):
@@ -87,7 +87,7 @@ class PipelineConfigurationTests(unittest.TestCase):
                             self.assertIn("apptainer.enabled = true", result.stdout)
                             self.assertIn("process.queue = 'REPLACE_WITH_PARTITION'", result.stdout)
                             if selected != "prepare_knowledge_bundle":
-                                process = "BWAMEM2_INDEX" if selected == "prepare_reference_bundle" else "BWAMEM2_MEM"
+                                process = "ALIGNMENT_MAPPER_INDEX" if selected == "prepare_reference_bundle" else "READS_ALIGN"
                                 # Runtime resource probes verify resolved attempt-specific values.
                                 self.assertIn(f"process.'withName:{process}'.memory =", result.stdout)
                         else:
@@ -102,7 +102,7 @@ class PipelineConfigurationTests(unittest.TestCase):
                     override.write_text(
                         (f"includeConfig '{PROJECT / 'nextflow.config'}'\n" if flag == "-C" else "")
                         + f"includeConfig '{PROJECT / 'conf/site.example.config'}'\n"
-                        + "process { withName: BWAMEM2_MEM { cpus = 3; memory = '6 GB' } }\n")
+                        + "process { withName: READS_ALIGN { cpus = 3; memory = '6 GB' } }\n")
                     command = [os.environ.get("NEXTFLOW", "nextflow"), flag, str(override),
                                "config", str(PROJECT), "-profile", "slurm", "-flat"]
                     result = subprocess.run(command, cwd=directory, text=True,
@@ -110,8 +110,8 @@ class PipelineConfigurationTests(unittest.TestCase):
                     self.assertEqual(result.returncode, 0, result.stdout)
                     for expected in ["process.executor = 'slurm'", "apptainer.enabled = true",
                                      "process.queue = 'REPLACE_WITH_PARTITION'",
-                                     "process.'withName:BWAMEM2_MEM'.cpus = 3",
-                                     "process.'withName:BWAMEM2_MEM'.memory = '6 GB'",
+                                     "process.'withName:READS_ALIGN'.cpus = 3",
+                                     "process.'withName:READS_ALIGN'.memory = '6 GB'",
                                      "outputDir = 'results'", "trace.directory = 'execution'"]:
                         self.assertIn(expected, result.stdout)
 

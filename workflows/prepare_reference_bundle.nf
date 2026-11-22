@@ -1,12 +1,12 @@
-include { GUNZIP as ANNOTATION_GUNZIP } from '../modules/nf-core/gunzip/main'
-include { SAMTOOLS_FAIDX as ANNOTATION_FAIDX } from '../modules/nf-core/samtools/faidx/main'
+include { GUNZIP as ANNOTATION_FASTA_DECOMPRESS } from '../modules/nf-core/gunzip/main'
+include { SAMTOOLS_FAIDX as ANNOTATION_FASTA_INDEX } from '../modules/nf-core/samtools/faidx/main'
 include { ANNOTATION_PREPARE } from '../modules/local/annotation_prepare'
-include { GUNZIP } from '../modules/nf-core/gunzip/main'
-include { BEDTOOLS_MASKFASTA } from '../modules/nf-core/bedtools/maskfasta/main'
-include { SAMTOOLS_FAIDX } from '../modules/nf-core/samtools/faidx/main'
-include { PICARD_CREATESEQUENCEDICTIONARY } from '../modules/nf-core/picard/createsequencedictionary/main'
-include { BWAMEM2_INDEX } from '../modules/nf-core/bwamem2/index/main'
-include { REFERENCE_BUNDLE } from '../modules/local/reference_bundle'
+include { GUNZIP as ALIGNMENT_FASTA_DECOMPRESS } from '../modules/nf-core/gunzip/main'
+include { BEDTOOLS_MASKFASTA as ALIGNMENT_FASTA_MASK } from '../modules/nf-core/bedtools/maskfasta/main'
+include { SAMTOOLS_FAIDX as ALIGNMENT_FASTA_INDEX } from '../modules/nf-core/samtools/faidx/main'
+include { PICARD_CREATESEQUENCEDICTIONARY as ALIGNMENT_SEQUENCE_DICTIONARY_CREATE } from '../modules/nf-core/picard/createsequencedictionary/main'
+include { BWAMEM2_INDEX as ALIGNMENT_MAPPER_INDEX } from '../modules/nf-core/bwamem2/index/main'
+include { REFERENCE_BUNDLE as REFERENCE_BUNDLE_ASSEMBLE } from '../modules/local/reference_bundle'
 include { REFERENCE_VALIDATE } from '../modules/local/reference_validate'
 include { REFERENCE_DOWNLOAD } from '../modules/local/reference_download'
 
@@ -126,30 +126,30 @@ workflow PREPARE_REFERENCE_BUNDLE {
         compressed: path.name.endsWith('.gz')
         plain: true
     }
-    ANNOTATION_GUNZIP(annotation_inputs.compressed.map { path -> [[id: 'annotation', reference_label: reference_label], path] })
-    annotation_fasta = ANNOTATION_GUNZIP.out.gunzip.map { _meta, path -> path }.mix(annotation_inputs.plain)
+    ANNOTATION_FASTA_DECOMPRESS(annotation_inputs.compressed.map { path -> [[id: 'annotation', reference_label: reference_label], path] })
+    annotation_fasta = ANNOTATION_FASTA_DECOMPRESS.out.gunzip.map { _meta, path -> path }.mix(annotation_inputs.plain)
     inputs = fasta.branch { path ->
         compressed: path.name.endsWith('.gz')
         plain: true
     }
-    GUNZIP(inputs.compressed.map { path -> [[id: 'reference', reference_label: reference_label], path] })
-    uncompressed = GUNZIP.out.gunzip.map { _meta, path -> path }.mix(inputs.plain)
+    ALIGNMENT_FASTA_DECOMPRESS(inputs.compressed.map { path -> [[id: 'reference', reference_label: reference_label], path] })
+    uncompressed = ALIGNMENT_FASTA_DECOMPRESS.out.gunzip.map { _meta, path -> path }.mix(inputs.plain)
     REFERENCE_VALIDATE(uncompressed, exclusions_bed, fasta, policy, file("$repository/bin/validate_reference.py"), reference_label)
-    ANNOTATION_FAIDX(annotation_fasta.combine(REFERENCE_VALIDATE.out.report).map { path, _report ->
+    ANNOTATION_FASTA_INDEX(annotation_fasta.combine(REFERENCE_VALIDATE.out.report).map { path, _report ->
         [[id: 'annotation', reference_label: reference_label], path, []]
     }, false)
-    BEDTOOLS_MASKFASTA(REFERENCE_VALIDATE.out.exclusions_bed.map { path ->
+    ALIGNMENT_FASTA_MASK(REFERENCE_VALIDATE.out.exclusions_bed.map { path ->
         [[id: 'reference', reference_label: reference_label], path]
     }, REFERENCE_VALIDATE.out.fasta)
     ANNOTATION_PREPARE(
-        REFERENCE_VALIDATE.out.fasta, BEDTOOLS_MASKFASTA.out.fasta.map { _meta, path -> path },
-        annotation_fasta, ANNOTATION_FAIDX.out.fai.map { _meta, path -> path },
+        REFERENCE_VALIDATE.out.fasta, ALIGNMENT_FASTA_MASK.out.fasta.map { _meta, path -> path },
+        annotation_fasta, ANNOTATION_FASTA_INDEX.out.fai.map { _meta, path -> path },
         annotation_archive, cache_archive, policy,
         [file("$repository/bin/prepare_annotation.py"), file("$repository/bin/validate_reference.py")], reference_label
     )
-    BWAMEM2_INDEX(BEDTOOLS_MASKFASTA.out.fasta)
-    SAMTOOLS_FAIDX(BEDTOOLS_MASKFASTA.out.fasta.map { meta, path -> [meta, path, []] }, false)
-    PICARD_CREATESEQUENCEDICTIONARY(BEDTOOLS_MASKFASTA.out.fasta)
+    ALIGNMENT_MAPPER_INDEX(ALIGNMENT_FASTA_MASK.out.fasta)
+    ALIGNMENT_FASTA_INDEX(ALIGNMENT_FASTA_MASK.out.fasta.map { meta, path -> [meta, path, []] }, false)
+    ALIGNMENT_SEQUENCE_DICTIONARY_CREATE(ALIGNMENT_FASTA_MASK.out.fasta)
     modules = new groovy.json.JsonSlurper().parseText(file("$repository/modules.json").text)
     source_paths = [
         'main.nf', 'nextflow.config', 'workflows/prepare_reference_bundle.nf',
@@ -172,18 +172,18 @@ workflow PREPARE_REFERENCE_BUNDLE {
         modules: modules.repos['https://github.com/nf-core/modules.git'].modules['nf-core']
             .subMap(['gunzip', 'bedtools/maskfasta', 'bwamem2/index', 'samtools/faidx', 'picard/createsequencedictionary'])
     ])
-    versions = GUNZIP.out.versions_gunzip
-        .mix(BEDTOOLS_MASKFASTA.out.versions_bedtools, BWAMEM2_INDEX.out.versions_bwamem2,
-             SAMTOOLS_FAIDX.out.versions_samtools, PICARD_CREATESEQUENCEDICTIONARY.out.versions_picard,
-             ANNOTATION_GUNZIP.out.versions_gunzip, ANNOTATION_FAIDX.out.versions_samtools)
+    versions = ALIGNMENT_FASTA_DECOMPRESS.out.versions_gunzip
+        .mix(ALIGNMENT_FASTA_MASK.out.versions_bedtools, ALIGNMENT_MAPPER_INDEX.out.versions_bwamem2,
+             ALIGNMENT_FASTA_INDEX.out.versions_samtools, ALIGNMENT_SEQUENCE_DICTIONARY_CREATE.out.versions_picard,
+             ANNOTATION_FASTA_DECOMPRESS.out.versions_gunzip, ANNOTATION_FASTA_INDEX.out.versions_samtools)
         .collect(flat: false).map { entries -> encoded(entries) }
-    REFERENCE_BUNDLE(
-        BEDTOOLS_MASKFASTA.out.fasta.map { _meta, path -> path }, BWAMEM2_INDEX.out.index.map { _meta, path -> path },
-        SAMTOOLS_FAIDX.out.fai.map { _meta, path -> path },
-        PICARD_CREATESEQUENCEDICTIONARY.out.reference_dict.map { _meta, path -> path },
+    REFERENCE_BUNDLE_ASSEMBLE(
+        ALIGNMENT_FASTA_MASK.out.fasta.map { _meta, path -> path }, ALIGNMENT_MAPPER_INDEX.out.index.map { _meta, path -> path },
+        ALIGNMENT_FASTA_INDEX.out.fai.map { _meta, path -> path },
+        ALIGNMENT_SEQUENCE_DICTIONARY_CREATE.out.reference_dict.map { _meta, path -> path },
         REFERENCE_VALIDATE.out.report, ANNOTATION_PREPARE.out.assets, metadata, versions, file("$repository/bin/package_reference.py"), reference_label
     )
 
     emit:
-    bundle = REFERENCE_BUNDLE.out
+    bundle = REFERENCE_BUNDLE_ASSEMBLE.out
 }

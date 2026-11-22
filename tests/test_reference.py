@@ -255,14 +255,16 @@ class ReferencePreparationTests(unittest.TestCase):
         for artifact, checksum in manifest['checksums'].items():
             self.assertEqual(hashlib.sha256((self.bundle / artifact).read_bytes()).hexdigest(), checksum)
 
-    def assert_reference_labels(self, label, downloads=(), compressed=True):
+    def assert_reference_labels(self, label, downloads=(), compressed=True, annotation_compressed=False):
         with (self.directory / f"trace-{self.run_count}.tsv").open() as handle:
             names = [row["name"].split(":")[-1] for row in csv.DictReader(handle, delimiter="\t")]
         expected = [f"{process} ({label})" for process in
-                    ["REFERENCE_VALIDATE", "BEDTOOLS_MASKFASTA", "BWAMEM2_INDEX", "SAMTOOLS_FAIDX",
-                     "PICARD_CREATESEQUENCEDICTIONARY", "REFERENCE_BUNDLE", "ANNOTATION_FAIDX", "ANNOTATION_PREPARE"]]
+                    ["REFERENCE_VALIDATE", "ALIGNMENT_FASTA_MASK", "ALIGNMENT_MAPPER_INDEX", "ALIGNMENT_FASTA_INDEX",
+                     "ALIGNMENT_SEQUENCE_DICTIONARY_CREATE", "REFERENCE_BUNDLE_ASSEMBLE", "ANNOTATION_FASTA_INDEX", "ANNOTATION_PREPARE"]]
         if compressed:
-            expected.append(f"GUNZIP ({label})")
+            expected.append(f"ALIGNMENT_FASTA_DECOMPRESS ({label})")
+        if annotation_compressed:
+            expected.append(f"ANNOTATION_FASTA_DECOMPRESS ({label})")
         expected.extend(f"REFERENCE_DOWNLOAD ({filename} / {kind})" for kind, filename in downloads)
         self.assertCountEqual(names, expected)
 
@@ -284,28 +286,28 @@ class ReferencePreparationTests(unittest.TestCase):
 
     def test_annotation_sources_reuse_verified_downloads_across_preparations(self):
         with self.http_sources() as (base, requests, payloads):
-            payloads["/annotation.fa"] = b">1\nACGTACGTACGTACGTACGT\n>2\nTTTTCCCCAAAAGGGG\n"
+            payloads["/annotation.fa.gz"] = gzip.compress(b">1\nACGTACGTACGTACGTACGT\n>2\nTTTTCCCCAAAAGGGG\n")
             payloads["/refseq-cache.tar.gz"] = CACHE.read_bytes()
             expected = {name: hashlib.sha256(payloads[path]).hexdigest()
-                        for name, path in [("annotation_fasta", "/annotation.fa"),
+                        for name, path in [("annotation_fasta", "/annotation.fa.gz"),
                                            ("vep_cache", "/refseq-cache.tar.gz")]}
             for destination in ["first", "second"]:
                 self.bundle = self.directory / destination
                 result = self.prepare(
-                    "--annotation_fasta", f"{base}/annotation.fa?download=1#annotation",
+                    "--annotation_fasta", f"{base}/annotation.fa.gz?download=1#annotation",
                     "--vep_cache", f"{base}/refseq-cache.tar.gz?download=1#cache",
                     "--annotation_fasta_sha256", expected["annotation_fasta"],
                     "--vep_cache_sha256", expected["vep_cache"],
                     "--downloads_dir", str(self.directory / "downloads"))
                 self.assertEqual(result.returncode, 0, result.stdout)
-                self.assert_reference_labels("source.fa.gz", downloads=[
-                    ("annotation_fasta", "annotation.fa"), ("vep_cache", "refseq-cache.tar.gz")])
+                self.assert_reference_labels("source.fa.gz", annotation_compressed=True, downloads=[
+                    ("annotation_fasta", "annotation.fa.gz"), ("vep_cache", "refseq-cache.tar.gz")])
                 manifest = json.loads((self.bundle / "bundle.json").read_text())
                 for kind, digest in expected.items():
                     self.assertEqual(manifest["sources"][kind]["sha256"], digest)
                     self.assertEqual(manifest["sources"][kind]["verified_checksum"], f"sha256:{digest}")
                     self.assertTrue(manifest["sources"][kind]["uri"].startswith(base))
-            self.assertEqual(requests, {"/annotation.fa?download=1": 1, "/refseq-cache.tar.gz?download=1": 1})
+            self.assertEqual(requests, {"/annotation.fa.gz?download=1": 1, "/refseq-cache.tar.gz?download=1": 1})
 
     def test_reference_label_uses_builtin_fasta_basename(self):
         base = ("https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/"
@@ -676,8 +678,8 @@ class ReferencePreparationTests(unittest.TestCase):
                 with (snapshot / name).open("a") as handle:
                     handle.write("\n# Downstream code revision\n" if name.endswith(".py") else
                                  "\nprocess {\n"
-                                 "    withName: BEDTOOLS_MASKFASTA { ext.args = '' }\n"
-                                 "    withName: BWAMEM2_INDEX { ext.args = '' }\n"
+                                 "    withName: ALIGNMENT_FASTA_MASK { ext.args = '' }\n"
+                                 "    withName: ALIGNMENT_MAPPER_INDEX { ext.args = '' }\n"
                                  "}\n")
             result = self.prepare("--downloads_dir", "stored sources",
                                   "--outdir", str(self.directory / "revised"), project=snapshot)

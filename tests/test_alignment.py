@@ -292,13 +292,18 @@ class AlignmentTests(unittest.TestCase):
             trace = list(csv.DictReader(handle, delimiter="\t"))
         self.assertTrue(trace)
         self.assertTrue(all(task["name"].startswith("ONCOHAWK:") for task in trace))
-        for process in ["GATK4_MUTECT2", "GATK4_FILTERMUTECTCALLS"]:
+        self.assertCountEqual(
+            [task["name"].split(":")[-1].split(" (")[0] for task in trace],
+            ["READS_TRIM", "READS_ALIGN", "SAMPLE_ALIGNMENTS_MERGE", "SAMPLE_DUPLICATES_MARK",
+             "SAMPLE_BAM_INDEX", "VARIANTS_CALL", "VARIANTS_FILTER", "VARIANT_CONSEQUENCES_ANNOTATE"],
+        )
+        for process in ["VARIANTS_CALL", "VARIANTS_FILTER"]:
             self.assertTrue(any(f":{process} (S1)" in task["name"] for task in trace))
-        self.assertTrue(any("CUTADAPT (S1 / L1 / FC1 / 1 / " in task["name"] for task in trace))
+        self.assertTrue(any("READS_TRIM (S1 / L1 / FC1 / 1 / " in task["name"] for task in trace))
         for name in ("report.html", "timeline.html", "dag.html"):
             content = (self.output / "execution" / name).read_text()
-            self.assertIn("CUTADAPT", content)
-            self.assertIn("BWAMEM2_MEM", content)
+            self.assertIn("READS_TRIM", content)
+            self.assertIn("READS_ALIGN", content)
         for name in ("trace.tsv", "report.html", "timeline.html", "dag.html"):
             self.assertFalse((self.directory / name).exists())
 
@@ -318,7 +323,7 @@ class AlignmentTests(unittest.TestCase):
             with self.subTest(config_mode=mode):
                 site = self.directory / f"site-{mode}.config"
                 site.write_text((f"includeConfig '{PROJECT / 'nextflow.config'}'\n" if mode == "-C" else "") +
-                                "process { withName: BWAMEM2_MEM { cpus = 2 } }\n")
+                                "process { withName: READS_ALIGN { cpus = 2 } }\n")
                 self.output = Path(os.path.normpath(launch / relative))
                 result = self.align(launch_directory=launch, workflow=selected, config=site,
                                     config_mode=mode, outdir=relative, diagnostics=True)
@@ -327,7 +332,7 @@ class AlignmentTests(unittest.TestCase):
                 self.assert_bam_pairs(pairs)
                 with (self.output / "execution/trace.tsv").open() as handle:
                     trace = list(csv.DictReader(handle, delimiter="\t"))
-                self.assertTrue(any("BWAMEM2_MEM (S1 / L1 / FC1 / 1 / " in task["name"] for task in trace))
+                self.assertTrue(any("READS_ALIGN (S1 / L1 / FC1 / 1 / " in task["name"] for task in trace))
                 self.assertEqual(sentinel.read_text(), "existing default results")
                 self.assertEqual(sorted(path.name for path in (launch / "results").iterdir()), ["existing.txt"])
                 for name in ("trace.tsv", "report.html", "timeline.html", "dag.html"):
@@ -416,7 +421,7 @@ class AlignmentTests(unittest.TestCase):
         self.reads(pairs)
         self.samples()
         site = self.directory / "site.config"
-        site.write_text("process { withName: BWAMEM2_MEM {\n"
+        site.write_text("process { withName: READS_ALIGN {\n"
                         "  cpus = 2\n"
                         "  memory = '1 GB'\n"
                         "} }\n"
@@ -434,9 +439,9 @@ class AlignmentTests(unittest.TestCase):
                 trace = list(csv.DictReader(handle, delimiter="\t"))
             self.assertTrue(trace)
             self.assertTrue(all(task["name"].startswith("ONCOHAWK:") for task in trace))
-            for process in ["GATK4_MUTECT2", "GATK4_FILTERMUTECTCALLS"]:
+            for process in ["VARIANTS_CALL", "VARIANTS_FILTER"]:
                 self.assertTrue(any(f":{process} (S1)" in task["name"] for task in trace))
-            mapper = next(task for task in trace if ":BWAMEM2_MEM (" in task["name"])
+            mapper = next(task for task in trace if ":READS_ALIGN (" in task["name"])
             self.assertEqual(mapper["cpus"], "2")
             self.assertEqual(mapper["memory"], "1 GB")
             self.assertFalse((self.directory / "reference").exists())
@@ -460,7 +465,7 @@ class AlignmentTests(unittest.TestCase):
             "docker.runOptions = '--platform=linux/amd64'\n"
             "docker.fixOwnership = true\n"
             "process.resourceLimits = [cpus: 2, memory: 1.GB, time: 10.min]\n"
-            "process { withName: BWAMEM2_MEM {\n"
+            "process { withName: READS_ALIGN {\n"
             "  beforeScript = { \"printf 'RETRY\\t${meta.sample}\\t${task.attempt}\\t${task.cpus}\\t${task.memory.toBytes()}\\t${task.time.toMillis()}\\n'; "
             "if [ ${task.attempt} -eq 1 ]; then exit 143; fi\" }\n"
             "} }\n"
@@ -471,7 +476,7 @@ class AlignmentTests(unittest.TestCase):
         for sample in ['S1', 'S2']:
             self.assert_bam_pairs(pairs, sample=sample)
         with (self.output / 'execution/trace.tsv').open() as handle:
-            tasks = [row for row in csv.DictReader(handle, delimiter='\t') if ':BWAMEM2_MEM (' in row['name']]
+            tasks = [row for row in csv.DictReader(handle, delimiter='\t') if ':READS_ALIGN (' in row['name']]
         self.assertCountEqual([row['status'] for row in tasks], ['FAILED', 'COMPLETED', 'FAILED', 'COMPLETED'])
         observed = []
         for output in (self.directory / 'work').glob('*/*/.command.log'):
@@ -492,7 +497,7 @@ class AlignmentTests(unittest.TestCase):
         # Use a public executor hook to fail S2 only after S1 has completed.
         # Two index slots avoid depending on task submission order.
         failure = self.directory / "failure.config"
-        failure.write_text("process { withName: SAMTOOLS_INDEX {\n"
+        failure.write_text("process { withName: SAMPLE_BAM_INDEX {\n"
                            "  maxForks = 2\n"
                            "  beforeScript = { meta.sample == 'S2' ? \""
                            "for attempt in {1..60}; do "
@@ -501,7 +506,7 @@ class AlignmentTests(unittest.TestCase):
                            "} }\n")
         result = self.align(config=failure, diagnostics=True)
         self.assertNotEqual(result.returncode, 0, result.stdout)
-        self.assertIn("Error executing process > 'ONCOHAWK:SAMTOOLS_INDEX (S2)'", result.stdout)
+        self.assertIn("Error executing process > 'ONCOHAWK:SAMPLE_BAM_INDEX (S2)'", result.stdout)
         self.assertIn("17", result.stdout)
         self.assert_bam_pairs(pairs, sample="S1")
         self.assertEqual(len(self.samtools("view", "/data/samples/S1/alignments/S1.bam",
@@ -512,7 +517,7 @@ class AlignmentTests(unittest.TestCase):
         self.assertFalse((self.output / "samples/S2/alignments/S2.bam.bai").exists())
         with (self.output / "execution/trace.tsv").open() as handle:
             trace = list(csv.DictReader(handle, delimiter="\t"))
-        self.assertTrue(any(task["name"] == "ONCOHAWK:SAMTOOLS_INDEX (S2)" and task["status"] == "FAILED"
+        self.assertTrue(any(task["name"] == "ONCOHAWK:SAMPLE_BAM_INDEX (S2)" and task["status"] == "FAILED"
                             for task in trace))
 
     def test_completed_variants_remain_usable_when_another_sample_filter_fails(self):
@@ -526,7 +531,7 @@ class AlignmentTests(unittest.TestCase):
                              fastq_1=str(self.r1), fastq_2=str(self.r2)))
         self.sample_rows(rows)
         failure = self.directory / "filter-failure.config"
-        failure.write_text("process { withName: GATK4_FILTERMUTECTCALLS {\n"
+        failure.write_text("process { withName: VARIANTS_FILTER {\n"
                            "  maxForks = 2\n"
                            "  beforeScript = { meta.sample == 'S2' ? \""
                            "for attempt in {1..60}; do "
@@ -535,7 +540,7 @@ class AlignmentTests(unittest.TestCase):
                            "} }\n")
         result = self.align(config=failure)
         self.assertNotEqual(result.returncode, 0, result.stdout)
-        self.assertIn("Error executing process > 'ONCOHAWK:GATK4_FILTERMUTECTCALLS (S2)'", result.stdout)
+        self.assertIn("Error executing process > 'ONCOHAWK:VARIANTS_FILTER (S2)'", result.stdout)
         self.assert_bam_pairs(pairs, sample="S1")
         self.assert_bam_pairs(pairs, sample="S2")
         self.assertFalse((self.output / "samples/S2/variants/S2.mutect2.vcf.gz").exists())
@@ -567,7 +572,7 @@ class AlignmentTests(unittest.TestCase):
                              fastq_1=str(self.r1), fastq_2=str(self.r2)))
         self.sample_rows(rows)
         failure = self.directory / "annotation-failure.config"
-        failure.write_text("process { withName: ENSEMBLVEP_VEP {\n"
+        failure.write_text("process { withName: VARIANT_CONSEQUENCES_ANNOTATE {\n"
                            "  maxForks = 2\n"
                            "  beforeScript = { meta.sample == 'S2' ? \""
                            "for attempt in {1..60}; do "
@@ -577,7 +582,7 @@ class AlignmentTests(unittest.TestCase):
                            "} }\n")
         result = self.align(config=failure)
         self.assertNotEqual(result.returncode, 0, result.stdout)
-        self.assertIn("Error executing process > 'ONCOHAWK:ENSEMBLVEP_VEP (S2)'", result.stdout)
+        self.assertIn("Error executing process > 'ONCOHAWK:VARIANT_CONSEQUENCES_ANNOTATE (S2)'", result.stdout)
         self.assertIn("17", result.stdout)
         for sample in ["S1", "S2"]:
             self.assert_bam_pairs(pairs, sample=sample)
@@ -755,7 +760,7 @@ class AlignmentTests(unittest.TestCase):
             with (self.output / "execution/trace.tsv").open() as handle:
                 trace = list(csv.DictReader(handle, delimiter="\t"))
             labels = {}
-            for process in ["CUTADAPT", "BWAMEM2_MEM"]:
+            for process in ["READS_TRIM", "READS_ALIGN"]:
                 names = [task["name"].split(":")[-1] for task in trace
                          if task["name"].split(":")[-1].startswith(f"{process} (")]
                 self.assertEqual(len(names), 3)
@@ -765,7 +770,7 @@ class AlignmentTests(unittest.TestCase):
                     self.assertRegex(label_text, r"^S1 / L1 / (FC\.1 / 2|FC / 1\.2) / [0-9a-f]{12}$")
                 self.assertEqual(sum(label_text.startswith("S1 / L1 / FC.1 / 2 / ")
                                      for label_text in labels[process]), 2)
-            self.assertEqual(set(labels["CUTADAPT"]), set(labels["BWAMEM2_MEM"]))
+            self.assertEqual(set(labels["READS_TRIM"]), set(labels["READS_ALIGN"]))
             header = self.samtools("view", "-H", "/data/samples/S1/alignments/S1.bam")
             groups = read_groups(header)
             self.assertEqual(len(groups), 2)
@@ -788,7 +793,7 @@ class AlignmentTests(unittest.TestCase):
             self.assertEqual(identities["chunk1"], identities["chunk2"])
             self.assertNotEqual(identities["chunk1"], identities["other_lane"])
             current = (sorted(tuple(sorted(group.items())) for group in groups), sorted(observed),
-                       sorted(labels["CUTADAPT"]))
+                       sorted(labels["READS_TRIM"]))
             if previous is not None:
                 self.assertEqual(current, previous)
             previous = current
@@ -1055,7 +1060,7 @@ class AlignmentTests(unittest.TestCase):
             handle.write("@different_name/2\nACGTACGTACGTACGT\n+\nIIIIIIIIIIIIIIII\n")
         result = self.align()
         self.assertNotEqual(result.returncode, 0, result.stdout)
-        self.assertIn("Error executing process > 'ONCOHAWK:CUTADAPT", result.stdout)
+        self.assertIn("Error executing process > 'ONCOHAWK:READS_TRIM", result.stdout)
         self.assertFalse((self.output / "samples/S1/alignments/S1.bam").exists())
         self.assertFalse((self.output / "samples/S1/alignments/S1.bam.bai").exists())
 
