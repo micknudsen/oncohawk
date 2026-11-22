@@ -68,7 +68,7 @@ class AnnotationTests(unittest.TestCase):
         ], cwd=cls.root, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         if result.returncode:
             raise AssertionError(result.stdout)
-        cls.options = shlex.split(json.loads(result.stdout)["process"]["withName:ENSEMBLVEP_VEP"]["ext"]["args"])
+        cls.options = shlex.split(json.loads(result.stdout)["process"]["withName:VARIANT_CONSEQUENCES_ANNOTATE"]["ext"]["args"])
 
     def setUp(self):
         self.directory = Path(tempfile.mkdtemp(prefix="case-", dir=self.root))
@@ -304,7 +304,7 @@ class AnnotationTests(unittest.TestCase):
         index = control_options.index("--transcript_filter")
         del control_options[index:index + 2]
         config = self.directory / "model-control.config"
-        config.write_text("process { withName: ENSEMBLVEP_VEP { ext.args = " +
+        config.write_text("process { withName: VARIANT_CONSEQUENCES_ANNOTATE { ext.args = " +
                           json.dumps(shlex.join(control_options)) + " } }\n")
         control_output = self.directory / "models"
         self.analyze(sheet, control_output, config=config, resume=True)

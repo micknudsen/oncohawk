@@ -4,6 +4,8 @@ The Oncohawk workflow, selected by `nextflow run .` or explicitly by `nextflow r
 
 It consumes the prepared reference bundle without running bundle preparation, and it requires no knowledge bundle for this analysis. Relative paths passed to `--input`, `--reference_bundle`, and `--outdir` resolve from the launch directory; paths within the sample sheet follow the rule below. Replace `.` with the checkout path when launching outside it.
 
+The workflow uses responsibility-based [process names](process-names.md), including `READS_ALIGN`, `VARIANTS_CALL`, and `VARIANT_CONSEQUENCES_ANNOTATE`. The naming guide maps the previous tool-based names to their replacements for site configurations and execution diagnostics.
+
 ## Sample sheet
 
 Use a CSV file with these required columns in any order and at least one data row. A single pair remains supported:
@@ -53,7 +55,7 @@ The same `ID` appears in the header and each read's `RG` tag. The encoded identi
 
 Internal row identities are hashes of the read-group tuple and canonical mate paths, independent of CSV row order. Internal output names begin with `_`, outside the accepted source-basename and public-identifier namespace. This keeps intermediate outputs from overwriting staged input symlinks or colliding with final sample filenames.
 
-CUTADAPT and BWAMEM2_MEM task labels use `sample / library / flowcell / lane / <12-character hash>` in the console, trace, and execution reports. The suffix is the first 12 characters of the internal row hash, distinguishing separate FASTQ pairs from the same sample/library/flowcell/lane. Both tasks retain the same label for a pair, including when sample-sheet rows are reordered. Display labels are configured separately from the full internal IDs and intermediate filenames; the nf-core modules remain unchanged.
+READS_TRIM and READS_ALIGN task labels use `sample / library / flowcell / lane / <12-character hash>` in the console, trace, and execution reports. The suffix is the first 12 characters of the internal row hash, distinguishing separate FASTQ pairs from the same sample/library/flowcell/lane. Both tasks retain the same label for a pair, including when sample-sheet rows are reordered. Display labels are configured separately from the full internal IDs and intermediate filenames; the nf-core modules remain unchanged.
 
 ## Local Docker execution
 
@@ -114,7 +116,7 @@ VEP also uses native task-local scratch because the pristine module expands its 
 
 The execution environment's temporary/scratch root must be writable, have sufficient capacity for GATK/VEP temporary data and staged outputs, and use a path without spaces or other URI-escaped characters. `scratch = true` uses Nextflow's native temporary-directory selection; a site-specific `scratch` selector may choose an appropriate node-local location. A custom `TMPDIR` containing spaces can reproduce the upstream problem. This is per-task runtime configuration, not a scientific calling/filtering option.
 
-GATK tasks appear in enabled diagnostics. Resource overrides use `GATK4_MUTECT2` and `GATK4_FILTERMUTECTCALLS` selectors in the existing analysis configuration. SLURM defaults are starting allocations, not full-reference measurements; the existing bounded retry policy applies. No new public workflow or BAM-input mode is introduced.
+GATK tasks appear in enabled diagnostics. Resource overrides use `VARIANTS_CALL` and `VARIANTS_FILTER` selectors in the existing analysis configuration. SLURM defaults are starting allocations, not full-reference measurements; the existing bounded retry policy applies. No new public workflow or BAM-input mode is introduced.
 
 ## Offline RefSeq consequence annotation
 
@@ -214,7 +216,7 @@ This check also applies to read-only `nextflow config` inspection. Inspect analy
 
 The SLURM profile enables [community-style resource retries](resource-retries.md): one retry with growing resource requests, optional native caps, and standard configuration overrides. First-attempt allocations remain unchanged; ordinary local Docker behavior is unchanged.
 
-Copy [the site example](../conf/site.example.config) and replace its queue/account and shared paths. This file contains only shared cluster settings. For the selected Oncohawk workflow, the `slurm` profile automatically loads [alignment process allocations](../conf/oncohawk_resources.config); copy these separately to customize CPU, memory, and time. Allocations for `CUTADAPT`, `BWAMEM2_MEM`, `SAMTOOLS_MERGE`, `PICARD_MARKDUPLICATES`, and `SAMTOOLS_INDEX` are illustrative, not measured requirements. Inputs, the reference bundle, work directory, output directory, and Apptainer cache must be accessible to the submission host and compute nodes.
+Copy [the site example](../conf/site.example.config) and replace its queue/account and shared paths. This file contains only shared cluster settings. For the selected Oncohawk workflow, the `slurm` profile automatically loads [alignment process allocations](../conf/oncohawk_resources.config); copy these separately to customize CPU, memory, and time. Allocations for `READS_TRIM`, `READS_ALIGN`, `SAMPLE_ALIGNMENTS_MERGE`, `SAMPLE_DUPLICATES_MARK`, and `SAMPLE_BAM_INDEX` are illustrative, not measured requirements. Inputs, the reference bundle, work directory, output directory, and Apptainer cache must be accessible to the submission host and compute nodes.
 
 ```bash
 mkdir -p .local

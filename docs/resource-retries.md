@@ -59,7 +59,7 @@ selectors. A fixed override stays fixed across attempts:
 
 ```groovy
 process {
-    withName: BWAMEM2_MEM {
+    withName: READS_ALIGN {
         memory = 96.GB
     }
 }
@@ -69,7 +69,7 @@ A dynamic override can preserve growth, subject to any configured caps:
 
 ```groovy
 process {
-    withName: BWAMEM2_MEM {
+    withName: READS_ALIGN {
         memory = { 96.GB * task.attempt }
     }
 }
@@ -79,7 +79,7 @@ For reference preparation, use its own selectors, for example:
 
 ```groovy
 process {
-    withName: BWAMEM2_INDEX {
+    withName: ALIGNMENT_MAPPER_INDEX {
         cpus = 1
         memory = { 128.GB * task.attempt }
         time = { 24.h * task.attempt }

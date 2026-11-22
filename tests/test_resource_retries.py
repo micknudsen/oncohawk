@@ -10,27 +10,27 @@ import unittest
 
 PROJECT = Path(__file__).resolve().parents[1]
 ALIGNMENT_REQUESTS = {
-    'ENSEMBLVEP_VEP': [(2, 8, 12), (4, 16, 24)],
-    'GATK4_MUTECT2': [(2, 8, 24), (4, 16, 48)],
-    'GATK4_FILTERMUTECTCALLS': [(1, 4, 4), (1, 8, 8)],
-    'CUTADAPT': [(4, 8, 4), (8, 16, 8)],
-    'BWAMEM2_MEM': [(8, 64, 12), (16, 128, 24)],
-    'SAMTOOLS_MERGE': [(2, 8, 4), (4, 16, 8)],
-    'PICARD_MARKDUPLICATES': [(2, 32, 12), (4, 64, 24)],
-    'SAMTOOLS_INDEX': [(2, 4, 4), (4, 8, 8)],
+    'VARIANT_CONSEQUENCES_ANNOTATE': [(2, 8, 12), (4, 16, 24)],
+    'VARIANTS_CALL': [(2, 8, 24), (4, 16, 48)],
+    'VARIANTS_FILTER': [(1, 4, 4), (1, 8, 8)],
+    'READS_TRIM': [(4, 8, 4), (8, 16, 8)],
+    'READS_ALIGN': [(8, 64, 12), (16, 128, 24)],
+    'SAMPLE_ALIGNMENTS_MERGE': [(2, 8, 4), (4, 16, 8)],
+    'SAMPLE_DUPLICATES_MARK': [(2, 32, 12), (4, 64, 24)],
+    'SAMPLE_BAM_INDEX': [(2, 4, 4), (4, 8, 8)],
 }
 REFERENCE_REQUESTS = {
-    'ANNOTATION_GUNZIP': [(1, 4, 2), (1, 8, 4)],
-    'ANNOTATION_FAIDX': [(1, 4, 4), (1, 8, 8)],
+    'ANNOTATION_FASTA_DECOMPRESS': [(1, 4, 2), (1, 8, 4)],
+    'ANNOTATION_FASTA_INDEX': [(1, 4, 4), (1, 8, 8)],
     'ANNOTATION_PREPARE': [(1, 4, 8), (1, 8, 16)],
-    'SAMTOOLS_FAIDX': [(1, 4, 4), (1, 8, 8)],
-    'PICARD_CREATESEQUENCEDICTIONARY': [(1, 4, 4), (1, 8, 8)],
+    'ALIGNMENT_FASTA_INDEX': [(1, 4, 4), (1, 8, 8)],
+    'ALIGNMENT_SEQUENCE_DICTIONARY_CREATE': [(1, 4, 4), (1, 8, 8)],
     'REFERENCE_DOWNLOAD': [(1, 2, 24), (1, 4, 48)],
-    'GUNZIP': [(1, 4, 2), (1, 8, 4)],
+    'ALIGNMENT_FASTA_DECOMPRESS': [(1, 4, 2), (1, 8, 4)],
     'REFERENCE_VALIDATE': [(1, 16, 4), (1, 32, 8)],
-    'BEDTOOLS_MASKFASTA': [(1, 16, 4), (1, 32, 8)],
-    'BWAMEM2_INDEX': [(1, 128, 24), (1, 256, 48)],
-    'REFERENCE_BUNDLE': [(1, 4, 4), (1, 8, 8)],
+    'ALIGNMENT_FASTA_MASK': [(1, 16, 4), (1, 32, 8)],
+    'ALIGNMENT_MAPPER_INDEX': [(1, 128, 24), (1, 256, 48)],
+    'REFERENCE_BUNDLE_ASSEMBLE': [(1, 4, 4), (1, 8, 8)],
 }
 
 
@@ -151,22 +151,22 @@ class ResourceRetryTests(unittest.TestCase):
         self.assertEqual([row[1] for row in resources], [1])
 
     def test_native_caps_clamp_initial_and_retry_requests_without_suppressing_retry(self):
-        result, resources = self.probe(['BWAMEM2_MEM'], overrides=(
+        result, resources = self.probe(['READS_ALIGN'], overrides=(
             'process.resourceLimits = [cpus: 3, memory: 5.GB, time: 2.h]\n'
         ))
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertEqual(resources, [
-            ('BWAMEM2_MEM', 1, 3, 5368709120, 7200000),
-            ('BWAMEM2_MEM', 2, 3, 5368709120, 7200000),
+            ('READS_ALIGN', 1, 3, 5368709120, 7200000),
+            ('READS_ALIGN', 2, 3, 5368709120, 7200000),
         ])
 
     def test_fixed_and_dynamic_overrides_preserve_configuration_semantics(self):
         for mode in ('-c', '-C'):
             with self.subTest(mode=mode):
-                result, resources = self.probe(['CUTADAPT', 'BWAMEM2_MEM'], config_mode=mode, overrides=(
+                result, resources = self.probe(['READS_TRIM', 'READS_ALIGN'], config_mode=mode, overrides=(
                     'process {\n'
-                    '  withName: CUTADAPT { cpus = 3; memory = 5.GB; time = 2.h }\n'
-                    '  withName: BWAMEM2_MEM {\n'
+                    '  withName: READS_TRIM { cpus = 3; memory = 5.GB; time = 2.h }\n'
+                    '  withName: READS_ALIGN {\n'
                     '    cpus = { 3 * task.attempt }\n'
                     '    memory = { 5.GB * task.attempt }\n'
                     '    time = { 2.h * task.attempt }\n'
@@ -175,10 +175,10 @@ class ResourceRetryTests(unittest.TestCase):
                 ))
                 self.assertEqual(result.returncode, 0, result.stdout)
                 self.assertEqual(resources, [
-                    ('BWAMEM2_MEM', 1, 3, 5368709120, 7200000),
-                    ('BWAMEM2_MEM', 2, 6, 10737418240, 14400000),
-                    ('CUTADAPT', 1, 3, 5368709120, 7200000),
-                    ('CUTADAPT', 2, 3, 5368709120, 7200000),
+                    ('READS_ALIGN', 1, 3, 5368709120, 7200000),
+                    ('READS_ALIGN', 2, 6, 10737418240, 14400000),
+                    ('READS_TRIM', 1, 3, 5368709120, 7200000),
+                    ('READS_TRIM', 2, 3, 5368709120, 7200000),
                 ])
 
     def test_native_retry_override_can_disable_recovery(self):
